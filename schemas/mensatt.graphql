@@ -1,0 +1,320 @@
+input AddImagesToReviewInput {
+  review: UUID!
+  images: [ImageInput!]!
+}
+
+input AddSideDishToOccurrenceInput {
+  occurrence: UUID!
+  dish: UUID!
+}
+
+input AddTagToOccurrenceInput {
+  occurrence: UUID!
+  tag: String!
+}
+
+input CreateDishAliasInput {
+  aliasName: String!
+  normalizedAliasName: String!
+  dish: UUID!
+}
+
+input CreateDishInput {
+  nameDe: String!
+  nameEn: String
+}
+
+input CreateOccurrenceInput {
+  location: UUID!
+  dish: UUID!
+  sideDishes: [UUID!]
+  date: Date
+  kj: Int
+  kcal: Int
+  fat: Int
+  saturatedFat: Int
+  carbohydrates: Int
+  sugar: Int
+  fiber: Int
+  protein: Int
+  salt: Int
+  priceStudent: Int
+  priceStaff: Int
+  priceGuest: Int
+  tags: [String!]
+}
+
+input CreateReviewInput {
+  occurrence: UUID!
+  displayName: String
+  images: [ImageInput!]
+  stars: Int!
+  text: String
+}
+
+input CreateTagInput {
+  key: String!
+  name: String!
+  description: String!
+  shortName: String
+  priority: TagPriority
+  isAllergy: Boolean
+}
+
+scalar Date
+
+input DeleteDishAliasInput {
+  aliasName: String!
+}
+
+input DeleteImagesFromReviewInput {
+  review: UUID!
+  images: [UUID!]!
+}
+
+input DeleteOccurrenceInput {
+  id: UUID!
+}
+
+input DeleteReviewInput {
+  id: UUID!
+}
+
+type Dish {
+  id: UUID!
+  nameDe: String!
+  nameEn: String
+  aliases: [DishAlias!]!
+  reviewData(filter: ReviewFilter): ReviewDataDish!
+}
+
+type DishAlias {
+  dish: Dish!
+  aliasName: String!
+  normalizedAliasName: String!
+}
+
+input DishFilter {
+  dishes: [UUID!]
+  nameDe: String
+  nameEn: String
+}
+
+type Image {
+  id: UUID!
+  review: Review!
+}
+
+input ImageInput {
+  id: UUID!
+  rotation: Int
+}
+
+type Location {
+  id: UUID!
+  externalId: Int!
+  name: String!
+  visible: Boolean!
+}
+
+input LocationFilter {
+  ids: [UUID!]
+  externalIds: [Int!]
+  names: [String!]
+  visible: Boolean
+}
+
+input LoginUserInput {
+  email: String!
+  password: String!
+}
+
+type Mutation {
+  loginUser(input: LoginUserInput!): String!
+  createTag(input: CreateTagInput!): Tag!
+  createDish(input: CreateDishInput!): Dish!
+  updateDish(input: UpdateDishInput!): Dish!
+  createDishAlias(input: CreateDishAliasInput!): DishAlias!
+  deleteDishAlias(input: DeleteDishAliasInput!): DishAlias!
+  createOccurrence(input: CreateOccurrenceInput!): Occurrence!
+  updateOccurrence(input: UpdateOccurrenceInput!): Occurrence!
+  deleteOccurrence(input: DeleteOccurrenceInput!): Occurrence!
+  addTagToOccurrence(input: AddTagToOccurrenceInput!): OccurrenceTag!
+  removeTagFromOccurrence(input: RemoveTagFromOccurrenceInput!): OccurrenceTag!
+  addSideDishToOccurrence(input: AddSideDishToOccurrenceInput!): OccurrenceSideDish!
+  removeSideDishFromOccurrence(input: RemoveSideDishFromOccurrenceInput!): OccurrenceSideDish!
+  createReview(input: CreateReviewInput!): Review!
+  updateReview(input: UpdateReviewInput!): Review!
+  deleteReview(input: DeleteReviewInput!): Review!
+  addImagesToReview(input: AddImagesToReviewInput!): Review!
+  deleteImagesFromReview(input: DeleteImagesFromReviewInput!): Review!
+}
+
+type Occurrence {
+  id: UUID!
+  location: Location!
+  dish: Dish!
+  sideDishes: [Dish!]!
+  date: Date!
+  kj: Int
+  kcal: Int
+  fat: Int
+  saturatedFat: Int
+  carbohydrates: Int
+  sugar: Int
+  fiber: Int
+  protein: Int
+  salt: Int
+  priceStudent: Int
+  priceStaff: Int
+  priceGuest: Int
+  tags: [Tag!]!
+  reviewData(filter: ReviewFilter): ReviewDataOccurrence!
+  notAvailableAfter: Timestamp
+}
+
+input OccurrenceFilter {
+  occurrences: [UUID!]
+  dishes: [UUID!]
+  startDate: Date
+  endDate: Date
+  location: UUID
+}
+
+type OccurrenceSideDish {
+  occurrence: Occurrence!
+  dish: Dish!
+}
+
+type OccurrenceTag {
+  occurrence: Occurrence!
+  tag: Tag!
+}
+
+type Query {
+  currentUser: User
+  tags: [Tag!]!
+  dishes(filter: DishFilter): [Dish!]!
+  occurrences(filter: OccurrenceFilter): [Occurrence!]!
+  reviews(filter: ReviewFilter): [Review!]!
+  locations(filter: LocationFilter): [Location!]!
+  vcsBuildInfo: VcsBuildInfo
+}
+
+input RemoveSideDishFromOccurrenceInput {
+  occurrence: UUID!
+  dish: UUID!
+}
+
+input RemoveTagFromOccurrenceInput {
+  occurrence: UUID!
+  tag: String!
+}
+
+type Review {
+  id: UUID!
+  occurrence: Occurrence!
+  displayName: String
+  images: [Image!]!
+  stars: Int!
+  text: String
+  createdAt: Timestamp!
+  updatedAt: Timestamp!
+  acceptedAt: Timestamp
+}
+
+type ReviewDataDish {
+  reviews: [Review!]!
+  images: [Image!]!
+  metadata: ReviewMetadataDish!
+}
+
+type ReviewDataOccurrence {
+  reviews: [Review!]!
+  images: [Image!]!
+  metadata: ReviewMetadataOccurrence!
+}
+
+input ReviewFilter {
+  approved: Boolean
+}
+
+type ReviewMetadataDish {
+  averageStars: Float
+  reviewCount: Int!
+}
+
+type ReviewMetadataOccurrence {
+  averageStars: Float
+  reviewCount: Int!
+}
+
+type Subscription {
+  reviewCreated: Review
+  reviewAccepted: Review
+}
+
+type Tag {
+  key: String!
+  name: String!
+  description: String!
+  shortName: String
+  priority: TagPriority!
+  isAllergy: Boolean!
+}
+
+enum TagPriority {
+  HIDE
+  LOW
+  MEDIUM
+  HIGH
+}
+
+scalar Timestamp
+
+scalar UUID
+
+input UpdateDishInput {
+  id: UUID!
+  nameDe: String
+  nameEn: String
+}
+
+input UpdateOccurrenceInput {
+  id: UUID!
+  dish: UUID
+  date: Date
+  kj: Int
+  kcal: Int
+  fat: Int
+  saturatedFat: Int
+  carbohydrates: Int
+  sugar: Int
+  fiber: Int
+  protein: Int
+  salt: Int
+  priceStudent: Int
+  priceStaff: Int
+  priceGuest: Int
+}
+
+input UpdateReviewInput {
+  id: UUID!
+  occurrence: UUID
+  displayName: String
+  stars: Int
+  text: String
+  approved: Boolean
+}
+
+type User {
+  id: UUID!
+  email: String!
+}
+
+type VcsBuildInfo {
+  commitTime: String!
+  commit: String!
+  modified: String!
+}
+
