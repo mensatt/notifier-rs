@@ -1,55 +1,74 @@
-use crate::gql::subscriptions::CreateReviewSubscription;
-use cynic::http::ReqwestExt;
-use cynic::QueryBuilder;
-use cynic::SubscriptionBuilder;
-use futures::StreamExt;
-use graphql_ws_client::{Client, Connection};
-use reqwest::header::HeaderValue;
-use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+#![allow(dead_code)]
 
+use crate::gql::subscriptions::Review;
+use crate::settings::Settings;
+use config::Config;
+use log::{debug, error, info};
+
+mod discord;
 mod gql;
+mod settings;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Starting GraphQL subscription client...");
+async fn main() {
+    pretty_env_logger::formatted_timed_builder()
+        .filter(Some("notifier_rs"), log::LevelFilter::Debug)
+        .try_init()
+        .expect("Could not initialize logger");
 
-    const WS_URL: &str = "wss://dev-api.mensatt.de/data/graphql";
+    let config = Config::builder()
+        .add_source(config::File::with_name("config.toml").required(true))
+        .build()
+        .expect("Could not load config");
+    debug!("Loaded config: {:?}", config);
 
-    let mut req = WS_URL.into_client_request()?;
-    req.headers_mut().insert(
-            "Sec-WebSocket-Protocol",
-            HeaderValue::from_str("graphql-transport-ws").unwrap(),
-    );
-    println!("Connecting to WebSocket at: {}", WS_URL);
+    let settings: Settings = config
+        .try_deserialize()
+        .expect("Could not deserialize settings");
+    debug!("Loaded settings: {:#?}", settings);
 
-    let (ws_stream, resp) = tokio_tungstenite::connect_async(req).await?;
-    println!("WebSocket connection established. Response: {:?}", resp);
+    info!("Starting up notifier service...");
 
-    let client = Client::build(ws_stream);
-    println!("GraphQL WebSocket client created.");
+    let (tx, rx) = tokio::sync::mpsc::channel::<Review>(8);
 
-    println!("Initializing WebSocket connection...");
- 
-    println!("Starting subscription...");
-    let mut sub = client
-        .subscribe(CreateReviewSubscription::build(()))
-        .await?;
-    println!("Subscription started. Waiting for messages...");
+    // Create GQL listener
+    let gql_task = tokio::spawn(async move {
+        let listener = gql::listener::ReviewListener::new(settings.graphql.ws_url, tx);
 
-    loop {
-        tokio::select! {
-            Some(msg) = sub.next() => {
-                match msg {
-                    Ok(data) => println!("Received message: {:?}", data),
-                    Err(e) => eprintln!("Error receiving message: {:?}", e),
+        let mut tries: u32 = 0;
+
+        loop {
+            let res = listener.listen().await;
+            match res {
+                Ok(_) => {
+                    error!("Listener returned?");
+                    panic!();
+                }
+                Err(err) => {
+                    error!("Listener error: {}", err);
+                    error!("Retrying in 60 seconds...");
                 }
             }
-            _ = tokio::signal::ctrl_c() => {
-                println!("Ctrl+C received, shutting down.");
-                break;
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+            tries += 1;
+
+            if tries > 10 {
+                panic!("Too many tries, exiting...");
             }
         }
-    }
+    });
 
-    Ok(())
+    // Create discord bot
+    let discord_handle = tokio::spawn(async move {
+        let mut bot = discord::bot::Bot::new(rx);
+        bot.start(settings.discord.token.as_str())
+            .await
+            .expect("Failed to start bot");
+    });
+
+    info!("Notifier service started!");
+
+    discord_handle.await.expect("Discord bot failed");
+    gql_task.await.expect("GQL listener failed");
 }
