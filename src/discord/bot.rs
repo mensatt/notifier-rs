@@ -1,6 +1,7 @@
 use crate::gql::subscriptions::Review;
 use log::{debug, info};
 use serenity::all::{Context, EventHandler, GatewayIntents, Ready};
+use serenity::model::id::ChannelId;
 use serenity::{async_trait, Client};
 
 struct Handler;
@@ -18,11 +19,12 @@ impl EventHandler for Handler {
 
 pub struct Bot {
     rx: tokio::sync::mpsc::Receiver<Review>,
+    comm_channel: u64,
 }
 
 impl Bot {
-    pub fn new(rx: tokio::sync::mpsc::Receiver<Review>) -> Self {
-        Bot { rx }
+    pub fn new(rx: tokio::sync::mpsc::Receiver<Review>, comm_channel: u64) -> Self {
+        Bot { rx, comm_channel }
     }
 
     pub async fn start(&mut self, token: &str) -> anyhow::Result<()> {
@@ -34,13 +36,19 @@ impl Bot {
             .await
             .expect("Failed to create client");
 
-        client.start().await.expect("Failed to start client");
+        let http = client.http.clone();
+        tokio::spawn(async move {
+            client.start().await.expect("Failed to start client");
+        });
 
         info!("Discord bot started!");
-
         info!("Waiting for review events...");
+
+        let comms = ChannelId::new(self.comm_channel);
+
         while let Some(review) = self.rx.recv().await {
             info!("Received review through channel: {:#?}", review);
+            comms.say(http.clone(), format!("{:#?}", review)).await?;
         }
 
         Ok(())

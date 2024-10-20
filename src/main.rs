@@ -12,7 +12,7 @@ mod settings;
 #[tokio::main]
 async fn main() {
     pretty_env_logger::formatted_timed_builder()
-        .filter(Some("notifier_rs"), log::LevelFilter::Debug)
+        .filter(Some("notifier_rs"), log::LevelFilter::Info)
         .try_init()
         .expect("Could not initialize logger");
 
@@ -61,7 +61,7 @@ async fn main() {
 
     // Create discord bot
     let discord_handle = tokio::spawn(async move {
-        let mut bot = discord::bot::Bot::new(rx);
+        let mut bot = discord::bot::Bot::new(rx, settings.discord.comm_channel);
         bot.start(settings.discord.token.as_str())
             .await
             .expect("Failed to start bot");

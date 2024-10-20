@@ -9,6 +9,7 @@ pub struct Settings {
 #[derive(Debug, Deserialize)]
 pub struct Discord {
     pub token: String,
+    pub comm_channel: u64,
 }
 
 #[derive(Debug, Deserialize)]

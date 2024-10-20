@@ -1,5 +1,6 @@
 [discord]
 token = "<YOUR_TOKEN_HERE>"
+comm_channel = 0
 
 [graphql]
 ws_url = "wss://dev-api.mensatt.de/data/graphql"
