@@ -1,5 +1,5 @@
 use crate::gql::subscriptions::{CreateReviewSubscription, Review};
-use cynic::SubscriptionBuilder;
+use cynic::{GraphQlResponse, SubscriptionBuilder};
 use futures::StreamExt;
 use graphql_ws_client::Client;
 use log::{debug, error, info, warn};
@@ -37,28 +37,44 @@ impl ReviewListener {
         while let Some(msg) = subscription.next().await {
             match msg {
                 Ok(msg) => {
-                    debug!("Received message from subscription: {:?}", msg);
-                    if let Some(data) = msg.data {
-                        if let Some(review) = data.review_created {
-                            self.tx.send(review).await?;
-                        } else {
-                            warn!(
-                                "Received message from subscription with unknown data: {:#?}",
-                                data
-                            )
-                        }
-                    } else if let Some(err) = msg.errors {
-                        warn!(
-                            "Error while receiving message from subscription: {:#?}",
-                            err
-                        );
-                    }
+                    handle_subscription_message(self, msg).await?;
                 }
                 Err(err) => {
                     error!("Error while receiving message from subscription: {}", err);
                     return Err(err.into());
                 }
             }
+        }
+
+        async fn handle_subscription_message(
+            listener: &ReviewListener,
+            msg: GraphQlResponse<CreateReviewSubscription>,
+        ) -> anyhow::Result<()> {
+            debug!("Received message from subscription: {:?}", msg);
+
+            let data = match msg.data {
+                Some(data) => data,
+                None => {
+                    if let Some(err) = msg.errors {
+                        warn!(
+                            "Error while receiving message from subscription: {:#?}",
+                            err
+                        );
+                    }
+                    return Ok(());
+                }
+            };
+
+            if let Some(review) = data.review_created {
+                listener.tx.send(review).await?;
+            } else {
+                warn!(
+                    "Received message from subscription with unknown data: {:#?}",
+                    data
+                );
+            }
+
+            Ok(())
         }
 
         Ok(())

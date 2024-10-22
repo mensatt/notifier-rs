@@ -1,4 +1,5 @@
 use crate::gql::schema;
+use std::fmt::{Display, Formatter};
 
 #[derive(cynic::QueryFragment, Debug)]
 #[cynic(graphql_type = "Subscription")]
@@ -39,3 +40,10 @@ pub struct Timestamp(pub String);
 #[derive(cynic::Scalar, Debug, Clone)]
 #[cynic(graphql_type = "UUID")]
 pub struct Uuid(pub String);
+
+// TODO: Is there a better way for this?
+impl Display for Uuid {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
