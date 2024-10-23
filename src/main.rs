@@ -10,7 +10,7 @@ mod gql;
 mod settings;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     pretty_env_logger::formatted_timed_builder()
         .filter(Some("notifier_rs"), log::LevelFilter::Info)
         .try_init()
@@ -29,11 +29,21 @@ async fn main() {
 
     info!("Starting up notifier service...");
 
+    info!("Creating local graphql client");
+    let mut gql_client = gql::client::MensattGqlClient::new(settings.clone());
+    gql_client.login().await?;
+
+    // Buffer size shouldn't really matter here, as I don't expect the receiver to take that long
     let (tx, rx) = tokio::sync::mpsc::channel::<Review>(8);
+
+    // Required as both futures use async move, thus they "invalidate" settings
+    // Consequently, we give one future one clone and the other one the original
+    // I think it would also be fine to just pass references, but that could involve lifetimes
+    let settings_dup = settings.clone();
 
     // Create GQL listener
     let gql_task = tokio::spawn(async move {
-        let listener = gql::listener::ReviewListener::new(settings.graphql.ws_url, tx);
+        let listener = gql::listener::ReviewListener::new(settings_dup, tx);
 
         let mut tries: u32 = 0;
 
@@ -61,14 +71,17 @@ async fn main() {
 
     // Create discord bot
     let discord_handle = tokio::spawn(async move {
-        let mut bot = discord::bot::Bot::new(rx, settings.discord.comm_channel);
-        bot.start(settings.discord.token.as_str())
+        let mut bot = discord::bot::Bot::new(rx, settings.clone());
+        bot.start(settings.discord.token.as_str(), gql_client)
             .await
             .expect("Failed to start bot");
     });
 
     info!("Notifier service started!");
 
+    // Tasks finishing is equivalent to them failing, as they should run forever
     discord_handle.await.expect("Discord bot failed");
     gql_task.await.expect("GQL listener failed");
+
+    Ok(())
 }

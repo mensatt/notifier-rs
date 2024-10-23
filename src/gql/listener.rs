@@ -1,4 +1,5 @@
 use crate::gql::subscriptions::{CreateReviewSubscription, Review};
+use crate::settings::Settings;
 use cynic::{GraphQlResponse, SubscriptionBuilder};
 use futures::StreamExt;
 use graphql_ws_client::Client;
@@ -7,24 +8,27 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 
 pub struct ReviewListener {
-    ws_url: String,
+    settings: Settings,
     tx: tokio::sync::mpsc::Sender<Review>,
 }
 
 impl ReviewListener {
-    pub fn new(ws_url: String, tx: tokio::sync::mpsc::Sender<Review>) -> Self {
-        Self { ws_url, tx }
+    pub fn new(settings: Settings, tx: tokio::sync::mpsc::Sender<Review>) -> Self {
+        Self { settings, tx }
     }
 
     pub async fn listen(&self) -> anyhow::Result<()> {
-        let mut req = self.ws_url.clone().into_client_request()?;
+        let mut req = self.settings.graphql.ws_url.clone().into_client_request()?;
         req.headers_mut().insert(
             "Sec-WebSocket-Protocol",
             HeaderValue::from_str("graphql-transport-ws")
                 .expect("Could not transform header string to header value"),
         );
 
-        info!("Establishing websocket connection to {}", self.ws_url);
+        info!(
+            "Establishing websocket connection to {}",
+            self.settings.graphql.ws_url
+        );
         let (ws_stream, resp) = tokio_tungstenite::connect_async(req).await?;
         debug!("Websocket connection established: {:?}", resp);
 

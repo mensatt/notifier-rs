@@ -4,3 +4,13 @@ comm_channel = 0
 
 [graphql]
 ws_url = "wss://dev-api.mensatt.de/data/graphql"
+https_url = "https://dev-api.mensatt.de/data/graphql"
+
+[mensatt]
+occurrence_url = "https://mensatt.de/details/"
+user = "<username>"
+password = "<password>"
+
+[image]
+image_url = "https://api.mensatt.de/content/image/"
+key = "<key>"

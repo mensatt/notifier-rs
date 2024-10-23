@@ -1,4 +1,4 @@
-use crate::gql::schema;
+use crate::gql::{schema, Uuid};
 
 #[derive(cynic::QueryFragment, Debug)]
 #[cynic(graphql_type = "Query")]
@@ -36,7 +36,3 @@ pub struct Dish {
 
 #[derive(cynic::Scalar, Debug, Clone)]
 pub struct Timestamp(pub String);
-
-#[derive(cynic::Scalar, Debug, Clone)]
-#[cynic(graphql_type = "UUID")]
-pub struct Uuid(pub String);
