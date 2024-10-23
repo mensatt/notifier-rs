@@ -5,7 +5,8 @@ use crate::settings::Settings;
 use log::{debug, info, warn};
 use serenity::all::{
     ButtonStyle, Colour, Context, CreateButton, CreateEmbed, CreateEmbedAuthor, CreateMessage,
-    EditMessage, EventHandler, GatewayIntents, Http, Interaction, ReactionType, Ready, Timestamp,
+    CreateSelectMenu, CreateSelectMenuKind, CreateSelectMenuOption, EditMessage, EventHandler,
+    GatewayIntents, Http, Interaction, ReactionType, Ready, Timestamp,
 };
 use serenity::builder::CreateActionRow;
 use serenity::model::id::ChannelId;
@@ -162,9 +163,8 @@ impl Bot {
                 ));
             }
 
-            let msg = CreateMessage::new()
-                .embed(embed)
-                .components(vec![CreateActionRow::Buttons(vec![
+            let msg = CreateMessage::new().embed(embed).components(vec![
+                CreateActionRow::Buttons(vec![
                     CreateButton::new(format!("approve_{}", review.id))
                         .emoji(ReactionType::Unicode("✅".to_string()))
                         .label("Approve")
@@ -173,7 +173,27 @@ impl Bot {
                         .emoji(ReactionType::Unicode("🗑".to_string()))
                         .label("Reject")
                         .style(ButtonStyle::Danger),
-                ])]);
+                ]),
+                CreateActionRow::SelectMenu(CreateSelectMenu::new(
+                    format!("rotate_{}", review.id),
+                    CreateSelectMenuKind::String {
+                        options: vec![
+                            CreateSelectMenuOption::new("Rotate left", "270")
+                                .emoji(ReactionType::Unicode("⬅".to_string()))
+                                .description(
+                                    "Rotates the review image by 90 degrees counter-clockwise.",
+                                ),
+                            CreateSelectMenuOption::new("Flip image", "180")
+                                .emoji(ReactionType::Unicode("↕".to_string()))
+                                .description("Rotates the review image by 180 degrees.")
+                                .default_selection(true),
+                            CreateSelectMenuOption::new("Rotate right", "90")
+                                .emoji(ReactionType::Unicode("➡".to_string()))
+                                .description("Rotates the review image by 90 degrees clockwise."),
+                        ],
+                    },
+                )),
+            ]);
 
             comms.send_message(http.clone(), msg).await?;
         }
