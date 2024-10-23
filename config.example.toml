@@ -13,4 +13,5 @@ password = "<password>"
 
 [image]
 image_url = "https://api.mensatt.de/content/image/"
+rotate_url = "https://api.mensatt.de/content/rotate"
 key = "<key>"

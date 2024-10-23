@@ -30,5 +30,6 @@ pub struct Mensatt {
 #[derive(Debug, Deserialize, Clone)]
 pub struct Image {
     pub image_url: String,
+    pub rotate_url: String,
     pub key: String,
 }

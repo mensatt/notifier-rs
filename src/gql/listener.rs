@@ -4,6 +4,7 @@ use cynic::{GraphQlResponse, SubscriptionBuilder};
 use futures::StreamExt;
 use graphql_ws_client::Client;
 use log::{debug, error, info, warn};
+use std::time::Duration;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 
@@ -32,16 +33,20 @@ impl ReviewListener {
         let (ws_stream, resp) = tokio_tungstenite::connect_async(req).await?;
         debug!("Websocket connection established: {:?}", resp);
 
-        let gql = Client::build(ws_stream);
+        let gql = Client::build(ws_stream)
+            .keep_alive_interval(Duration::from_secs(30))
+            .keep_alive_retries(10)
+            .subscription_buffer_size(32);
 
         let mut subscription = gql.subscribe(CreateReviewSubscription::build(())).await?;
 
         info!("Successfully subscribed to review creation");
 
+        info!("Entering subscription loop?");
         while let Some(msg) = subscription.next().await {
             match msg {
                 Ok(msg) => {
-                    handle_subscription_message(self, msg).await?;
+                    self.handle_subscription_message(msg).await?;
                 }
                 Err(err) => {
                     error!("Error while receiving message from subscription: {}", err);
@@ -50,35 +55,35 @@ impl ReviewListener {
             }
         }
 
-        async fn handle_subscription_message(
-            listener: &ReviewListener,
-            msg: GraphQlResponse<CreateReviewSubscription>,
-        ) -> anyhow::Result<()> {
-            debug!("Received message from subscription: {:?}", msg);
+        Ok(())
+    }
 
-            let data = match msg.data {
-                Some(data) => data,
-                None => {
-                    if let Some(err) = msg.errors {
-                        warn!(
-                            "Error while receiving message from subscription: {:#?}",
-                            err
-                        );
-                    }
-                    return Ok(());
+    async fn handle_subscription_message(
+        &self,
+        msg: GraphQlResponse<CreateReviewSubscription>,
+    ) -> anyhow::Result<()> {
+        debug!("Received message from subscription: {:?}", msg);
+
+        let data = match msg.data {
+            Some(data) => data,
+            None => {
+                if let Some(err) = msg.errors {
+                    warn!(
+                        "Error while receiving message from subscription: {:#?}",
+                        err
+                    );
                 }
-            };
-
-            if let Some(review) = data.review_created {
-                listener.tx.send(review).await?;
-            } else {
-                warn!(
-                    "Received message from subscription with unknown data: {:#?}",
-                    data
-                );
+                return Ok(());
             }
+        };
 
-            Ok(())
+        if let Some(review) = data.review_created {
+            self.tx.send(review).await?;
+        } else {
+            warn!(
+                "Received message from subscription with unknown data: {:#?}",
+                data
+            );
         }
 
         Ok(())

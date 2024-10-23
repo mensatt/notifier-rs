@@ -7,6 +7,7 @@ use log::{debug, error, info};
 
 mod discord;
 mod gql;
+mod image;
 mod settings;
 
 #[tokio::main]
@@ -29,9 +30,10 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Starting up notifier service...");
 
-    info!("Creating local graphql client");
+    info!("Creating local graphql and image client");
     let mut gql_client = gql::client::MensattGqlClient::new(settings.clone());
     gql_client.login().await?;
+    let image_client = image::ImageClient::new(settings.clone());
 
     // Buffer size shouldn't really matter here, as I don't expect the receiver to take that long
     let (tx, rx) = tokio::sync::mpsc::channel::<Review>(8);
@@ -72,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
     // Create discord bot
     let discord_handle = tokio::spawn(async move {
         let mut bot = discord::bot::Bot::new(rx, settings.clone());
-        bot.start(settings.discord.token.as_str(), gql_client)
+        bot.start(settings.discord.token.as_str(), gql_client, image_client)
             .await
             .expect("Failed to start bot");
     });
