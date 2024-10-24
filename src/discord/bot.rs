@@ -161,6 +161,7 @@ impl EventHandler for Handler {
                                 };
                             }
 
+                            // Update to fake image
                             let embed = cmp
                                 .message
                                 .embeds
@@ -177,8 +178,11 @@ impl EventHandler for Handler {
                                     .expect("Could not retrieve Settings from global context");
 
                                 CreateEmbed::from(embed).image(format!(
-                                    "{}{}?auth={}",
-                                    settings.image.image_url, image_id, settings.image.key
+                                    "{}{}?auth={}&discord_fake={}",
+                                    settings.image.image_url,
+                                    image_id,
+                                    settings.image.key,
+                                    rand::random::<u64>()
                                 ))
                             };
 

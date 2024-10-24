@@ -1479,6 +1479,7 @@ dependencies = [
  "graphql-ws-client",
  "log",
  "pretty_env_logger",
+ "rand",
  "reqwest 0.12.8",
  "serde",
  "serenity",
