@@ -26,6 +26,10 @@ impl TypeMapKey for ImageClient {
     type Value = Arc<ImageClient>;
 }
 
+impl TypeMapKey for Settings {
+    type Value = Arc<Settings>;
+}
+
 #[async_trait]
 impl EventHandler for Handler {
     async fn ready(&self, _ctx: Context, data_about_bot: Ready) {
@@ -53,22 +57,9 @@ impl EventHandler for Handler {
                     return;
                 }
 
-                let (approve, angle) = match split[0] {
-                    "approve" => (true, None),
-                    "reject" => (false, None),
-                    "rotate" => (true, Some(split[2].parse::<i32>().unwrap())),
-                    _ => {
-                        warn!(
-                            "Received component interaction with invalid custom id: {}",
-                            cmp.data.custom_id
-                        );
-                        warn!("Message: {:#?}", cmp.message);
-                        return;
-                    }
-                };
+                let review_id = split[1];
 
-                let id = split[1];
-
+                // We are gonna take a while, let's tell discord to calm down a bit
                 match cmp.defer(ctx.http.clone()).await {
                     Ok(_) => {}
                     Err(e) => {
@@ -78,135 +69,257 @@ impl EventHandler for Handler {
                     }
                 }
 
-                let image_id: Option<&str> = {
-                    if let Some(embed) = cmp.message.embeds.first() {
-                        if let Some(image) = embed.image.as_ref() {
-                            Some(
-                                image
-                                    .url
-                                    .split("/")
-                                    .last()
-                                    .unwrap_or_else(|| {
-                                        panic!("Could not split image url: {}", image.url)
-                                    })
-                                    .split("?")
-                                    .next()
-                                    .unwrap_or_else(|| {
-                                        panic!("Could not split image url: {}", image.url)
-                                    }),
-                            )
-                        } else {
-                            None // I don't know why None at the end isn't enough
-                        }
-                    } else {
-                        None
-                    }
-                };
+                match split[0] {
+                    "approve" | "reject" => {
+                        let approve = split[0] == "approve";
 
-                if let Some(angle) = angle {
-                    if let Some(image_id) = image_id {
+                        // Scope to minimize the time the lock is held
+                        // (It shouldn't be an issue anyway, as it is only read, but better safe than sorry)
                         {
-                            let image_client = ctx.data.read().await;
-                            let image_client = image_client
-                                .get::<ImageClient>()
-                                .expect("Could not retrieve ImageClient from global context");
-                            match image_client.rotate_image(image_id, angle).await {
-                                Ok(_) => {
-                                    info!("Successfully rotated image {} by {}", image_id, angle);
-                                }
+                            let gql_client = ctx.data.read().await;
+                            let gql_client = gql_client
+                                .get::<MensattGqlClient>()
+                                .expect("Could not retrieve MensattGqlClient from global context");
+
+                            match gql_client
+                                .update_review(Uuid(review_id.to_string()), approve)
+                                .await
+                            {
+                                Ok(_) => {}
                                 Err(err) => {
-                                    warn!(
-                                        "Failed to rotate image {} by {}: {}",
-                                        image_id, angle, err
-                                    );
-                                    warn!("Message: {:#?}", cmp.message);
+                                    warn!("Failed to update review: {}", err);
+                                    warn!("Original message: {:#?}", cmp.message);
                                     return;
                                 }
                             };
                         }
-                    } else {
-                        info!("Tried to rotate image without image id!");
-                        debug!("Message: {:#?}", cmp.message);
-                        match cmp
-                            .create_followup(
-                                ctx.http.clone(),
-                                CreateInteractionResponseFollowup::new()
-                                    .ephemeral(true)
-                                    .content("You cannot rotate nothing! 😠"),
-                            )
-                            .await
-                        {
+
+                        let msg_edit = EditMessage::new().components(get_action_row(
+                            Some(approve),
+                            false,
+                            review_id,
+                        ));
+
+                        match cmp.message.edit(ctx.http.clone(), msg_edit).await {
                             Ok(_) => {}
-                            Err(err) => {
-                                warn!("Failed to create followup: {}", err);
-                                warn!("Original message: {:#?}", cmp.message);
+                            Err(e) => {
+                                warn!("Failed to edit message: {}", e);
+                                warn!("Message: {:#?}", cmp.message);
+                                return;
                             }
                         };
-                        return;
                     }
-                }
+                    "rotate" => {
+                        let angle = split[2].parse::<i32>().unwrap();
 
-                // Scope to minimize the time the lock is held
-                // (It shouldn't be an issue anyway, as it is only read, but better safe than sorry)
-                {
-                    let gql_client = ctx.data.read().await;
-                    let gql_client = gql_client
-                        .get::<MensattGqlClient>()
-                        .expect("Could not retrieve MensattGqlClient from global context");
+                        let image_id: Option<&str> = {
+                            if let Some(embed) = cmp.message.embeds.first() {
+                                if let Some(image) = embed.image.as_ref() {
+                                    Some(
+                                        image
+                                            .url
+                                            .split("/")
+                                            .last()
+                                            .unwrap_or_else(|| {
+                                                panic!("Could not split image url: {}", image.url)
+                                            })
+                                            .split("?")
+                                            .next()
+                                            .unwrap_or_else(|| {
+                                                panic!("Could not split image url: {}", image.url)
+                                            }),
+                                    )
+                                } else {
+                                    None // I don't know why None at the end isn't enough
+                                }
+                            } else {
+                                None
+                            }
+                        };
 
-                    match gql_client
-                        .update_review(Uuid(id.to_string()), approve)
-                        .await
-                    {
-                        Ok(_) => {}
-                        Err(err) => {
-                            warn!("Failed to update review: {}", err);
-                            warn!("Original message: {:#?}", cmp.message);
+                        if let Some(image_id) = image_id {
+                            {
+                                let image_client = ctx.data.read().await;
+                                let image_client = image_client
+                                    .get::<ImageClient>()
+                                    .expect("Could not retrieve ImageClient from global context");
+                                match image_client.rotate_image(image_id, angle).await {
+                                    Ok(_) => {
+                                        info!(
+                                            "Successfully rotated image {} by {}",
+                                            image_id, angle
+                                        );
+                                    }
+                                    Err(err) => {
+                                        warn!(
+                                            "Failed to rotate image {} by {}: {}",
+                                            image_id, angle, err
+                                        );
+                                        warn!("Message: {:#?}", cmp.message);
+                                        return;
+                                    }
+                                };
+                            }
+
+                            let embed = cmp
+                                .message
+                                .embeds
+                                .first()
+                                .unwrap_or_else(|| {
+                                    panic!("Received message without embed: {:#?}", cmp.message)
+                                })
+                                .clone();
+
+                            let updated_embed = {
+                                let settings = ctx.data.read().await;
+                                let settings = settings
+                                    .get::<Settings>()
+                                    .expect("Could not retrieve Settings from global context");
+
+                                CreateEmbed::from(embed).image(format!(
+                                    "{}{}?auth={}",
+                                    settings.image.image_url, image_id, settings.image.key
+                                ))
+                            };
+
+                            match cmp
+                                .message
+                                .edit(
+                                    ctx.http.clone(),
+                                    EditMessage::new().embeds(vec![updated_embed]),
+                                )
+                                .await
+                            {
+                                Ok(_) => {
+                                    info!(
+                                        "Successfully edited message on rotate: {:#?}",
+                                        cmp.message
+                                    );
+                                }
+                                Err(err) => {
+                                    warn!("Failed to edit message on rotate: {}", err);
+                                    warn!("Message: {:#?}", cmp.message);
+                                    return;
+                                }
+                            };
+                        } else {
+                            info!("Tried to rotate image without image id!");
+                            debug!("Message: {:#?}", cmp.message);
+                            match cmp
+                                .create_followup(
+                                    ctx.http.clone(),
+                                    CreateInteractionResponseFollowup::new()
+                                        .ephemeral(true)
+                                        .content("You cannot rotate nothing! 😠"),
+                                )
+                                .await
+                            {
+                                Ok(_) => {}
+                                Err(err) => {
+                                    warn!("Failed to create followup: {}", err);
+                                    warn!("Original message: {:#?}", cmp.message);
+                                }
+                            };
                             return;
                         }
-                    };
-                }
-
-                // TODO: Deduplicate button creation
-                let msg_edit = EditMessage::new().components(vec![CreateActionRow::Buttons(vec![
-                    // Hack: Add '_' before the custom id, to make it fail if for some reason it
-                    // is clicked after being disabled
-                    CreateButton::new(format!("_____approve_{}", id))
-                        .emoji(ReactionType::Unicode("✅".to_string()))
-                        .label(if approve {
-                            format!(
-                                "Approved by {}{}",
-                                cmp.user.name,
-                                if let Some(angle) = angle {
-                                    format!(" ({}°)", angle)
-                                } else {
-                                    "".to_string()
-                                }
-                            )
-                        } else {
-                            "Approve".to_string()
-                        })
-                        .disabled(true)
-                        .style(ButtonStyle::Success),
-                    CreateButton::new(format!("_____reject_{}", id))
-                        .emoji(ReactionType::Unicode("🗑".to_string()))
-                        .label(if !approve { "Rejected" } else { "Reject" })
-                        .disabled(true)
-                        .style(ButtonStyle::Danger),
-                ])]);
-
-                match cmp.message.edit(ctx.http.clone(), msg_edit).await {
-                    Ok(_) => {}
-                    Err(e) => {
-                        warn!("Failed to edit message: {}", e);
+                    }
+                    _ => {
+                        warn!(
+                            "Received component interaction with invalid custom id: {}",
+                            cmp.data.custom_id
+                        );
                         warn!("Message: {:#?}", cmp.message);
                         return;
                     }
-                };
+                }
             }
             _ => warn!("Received unknown interaction: {:#?}", interaction),
         }
     }
+}
+
+fn get_action_row(
+    approved: Option<bool>,
+    has_image: bool,
+    review_id: &str,
+) -> Vec<CreateActionRow> {
+    let mut buttons: Vec<CreateButton> = vec![];
+
+    let mut approve_btn = CreateButton::new("<invalid>")
+        .emoji(ReactionType::Unicode("✅".to_string()))
+        .style(ButtonStyle::Success);
+
+    match approved {
+        None => {
+            approve_btn = approve_btn
+                .label("Approve")
+                .custom_id(format!("approve_{}", review_id));
+        }
+        Some(approved) => {
+            if approved {
+                approve_btn = approve_btn
+                    .label("Approved")
+                    .custom_id(format!("_____approve_{}", review_id))
+                    .disabled(true);
+            } else {
+                approve_btn = approve_btn
+                    .label("Approve")
+                    .custom_id(format!("_____approve_{}", review_id))
+                    .disabled(true);
+            }
+        }
+    }
+
+    let mut reject_btn = CreateButton::new("<invalid>")
+        .emoji(ReactionType::Unicode("🗑".to_string()))
+        .style(ButtonStyle::Danger);
+
+    match approved {
+        None => {
+            reject_btn = reject_btn
+                .label("Reject")
+                .custom_id(format!("reject_{}", review_id));
+        }
+        Some(approved) => {
+            if approved {
+                reject_btn = reject_btn
+                    .label("Reject")
+                    .custom_id(format!("_____reject_{}", review_id))
+                    .disabled(true);
+            } else {
+                reject_btn = reject_btn
+                    .label("Rejected")
+                    .custom_id(format!("_____reject_{}", review_id))
+                    .disabled(true);
+            }
+        }
+    }
+
+    let mut rotation_btns = vec![
+        CreateButton::new(format!("rotate_{}_270", review_id))
+            .emoji(ReactionType::Unicode("↪".to_string()))
+            .label(" ")
+            .style(ButtonStyle::Secondary),
+        CreateButton::new(format!("rotate_{}_180", review_id))
+            .emoji(ReactionType::Unicode("↕".to_string()))
+            .label(" ")
+            .style(ButtonStyle::Secondary),
+        CreateButton::new(format!("rotate_{}_90", review_id))
+            .emoji(ReactionType::Unicode("↩".to_string()))
+            .label(" ")
+            .style(ButtonStyle::Secondary),
+    ];
+
+    buttons.push(approve_btn);
+
+    // Only add rotations if it was not approved yet
+    if has_image && approved != Some(true) {
+        buttons.append(&mut rotation_btns);
+    }
+
+    buttons.push(reject_btn);
+
+    vec![CreateActionRow::Buttons(buttons)]
 }
 
 pub struct Bot {
@@ -258,30 +371,11 @@ impl Bot {
                 ));
             }
 
-            let msg = CreateMessage::new()
-                .embed(embed)
-                .components(vec![CreateActionRow::Buttons(vec![
-                    CreateButton::new(format!("approve_{}", review.id))
-                        .emoji(ReactionType::Unicode("✅".to_string()))
-                        .label("Approve")
-                        .style(ButtonStyle::Success),
-                    CreateButton::new(format!("rotate_{}_270", review.id))
-                        .emoji(ReactionType::Unicode("⬅".to_string()))
-                        .label("Rotate left")
-                        .style(ButtonStyle::Secondary),
-                    CreateButton::new(format!("rotate_{}_180", review.id))
-                        .emoji(ReactionType::Unicode("↕".to_string()))
-                        .label("Flip")
-                        .style(ButtonStyle::Secondary),
-                    CreateButton::new(format!("rotate_{}_90", review.id))
-                        .emoji(ReactionType::Unicode("➡".to_string()))
-                        .label("Rotate right")
-                        .style(ButtonStyle::Secondary),
-                    CreateButton::new(format!("reject_{}", review.id))
-                        .emoji(ReactionType::Unicode("🗑".to_string()))
-                        .label("Reject")
-                        .style(ButtonStyle::Danger),
-                ])]);
+            let msg = CreateMessage::new().embed(embed).components(get_action_row(
+                None,
+                !review.images.is_empty(),
+                &review.id.to_string(),
+            ));
 
             comms.send_message(http.clone(), msg).await?;
         }
@@ -310,6 +404,7 @@ impl Bot {
             let mut data = client.data.write().await;
             data.insert::<MensattGqlClient>(Arc::new(mensatt_gql_client));
             data.insert::<ImageClient>(Arc::new(image_client));
+            data.insert::<Settings>(Arc::new(self.settings.clone()));
         }
 
         let http = client.http.clone();
