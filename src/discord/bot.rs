@@ -316,8 +316,7 @@ fn get_action_row(
 
     buttons.push(approve_btn);
 
-    // Only add rotations if it was not approved yet
-    if has_image && approved != Some(true) {
+    if has_image {
         buttons.append(&mut rotation_btns);
     }
 
