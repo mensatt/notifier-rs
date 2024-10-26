@@ -4,6 +4,7 @@ use crate::gql::subscriptions::Review;
 use crate::settings::Settings;
 use config::Config;
 use log::{debug, error, info};
+use rustls::crypto::CryptoProvider;
 
 mod discord;
 mod gql;
@@ -12,6 +13,9 @@ mod settings;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider())
+        .expect("Could not install default crypto provider");
+
     pretty_env_logger::formatted_timed_builder()
         .filter(Some("notifier_rs"), log::LevelFilter::Info)
         .try_init()

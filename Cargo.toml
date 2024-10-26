@@ -6,17 +6,18 @@ edition = "2021"
 [dependencies]
 cynic = { version = "3.8.0", features = ["http-reqwest"] }
 graphql-ws-client = { version = "0.10.2", features = ["client-cynic", "tungstenite"] }
-reqwest = { version = "0.12.8", features = ["blocking"] }
-tokio = { version = "1.40.0", features = ["full"] }
-tokio-tungstenite = { version = "0.23.0", features = ["native-tls", "tokio-native-tls"] }
+reqwest = { version = "0.12.8", default-features = false, features = ["blocking", "http2", "rustls-tls", "rustls-tls-webpki-roots"] }
+tokio = { version = "1.40.0", features = ["rt-multi-thread"] }
+tokio-tungstenite = { version = "0.23.0", features = ["rustls", "tokio-rustls", "rustls-tls-webpki-roots"] }
 futures = "0.3.31"
 log = "0.4.22"
 pretty_env_logger = "0.5.0"
 anyhow = "1.0.90"
-serenity = { version = "0.12.2", features = ["cache", "collector", "default_native_tls", "simd_json", "utils"] }
+serenity = { version = "0.12.2", features = ["cache", "rustls_backend", "simd_json", "utils"] }
 config = { version = "0.14.0", features = ["toml"] }
 serde = { version = "1.0.210", features = ["derive"] }
 rand = "0.8.5"
+rustls = { version = "0.23.15", features = ["aws-lc-rs"] }
 
 [build-dependencies]
 cynic-codegen = { version = "3" }
