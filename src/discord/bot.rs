@@ -6,10 +6,11 @@ use crate::settings::Settings;
 use log::{debug, info, warn};
 use serenity::all::{
     ButtonStyle, Colour, Context, CreateButton, CreateEmbed, CreateEmbedAuthor,
-    CreateInteractionResponseFollowup, CreateMessage, EditMessage, EventHandler, GatewayIntents,
-    Http, Interaction, ReactionType, Ready, Timestamp,
+    CreateInteractionResponse, CreateInteractionResponseFollowup, CreateMessage, CreateModal,
+    EditMessage, EventHandler, GatewayIntents, Http, InputTextStyle, Interaction, ReactionType,
+    Ready, Timestamp,
 };
-use serenity::builder::CreateActionRow;
+use serenity::builder::{CreateActionRow, CreateInputText};
 use serenity::model::id::ChannelId;
 use serenity::prelude::TypeMapKey;
 use serenity::{async_trait, Client};
@@ -94,11 +95,8 @@ impl EventHandler for Handler {
                             };
                         }
 
-                        let msg_edit = EditMessage::new().components(get_action_row(
-                            Some(approve),
-                            false,
-                            review_id,
-                        ));
+                        let msg_edit =
+                            EditMessage::new().components(get_action_row(Some(approve), review_id));
 
                         match cmp.message.edit(ctx.http.clone(), msg_edit).await {
                             Ok(_) => {}
@@ -108,6 +106,22 @@ impl EventHandler for Handler {
                                 return;
                             }
                         };
+                    }
+                    "edit" => {
+                        match cmp
+                            .create_response(
+                                ctx.http.clone(),
+                                CreateInteractionResponse::Modal(get_edit_modal("")),
+                            )
+                            .await
+                        {
+                            Ok(_) => {}
+                            Err(err) => {
+                                warn!("Failed to create response: {}", err);
+                                warn!("Message: {:#?}", cmp.message);
+                                return;
+                            }
+                        }
                     }
                     "rotate" => {
                         let angle = split[2].parse::<i32>().unwrap();
@@ -237,16 +251,27 @@ impl EventHandler for Handler {
                     }
                 }
             }
+            Interaction::Modal(modal) => {
+                info!("Received modal interaction: {:#?}", modal);
+            }
             _ => warn!("Received unknown interaction: {:#?}", interaction),
         }
     }
 }
 
-fn get_action_row(
-    approved: Option<bool>,
-    has_image: bool,
-    review_id: &str,
-) -> Vec<CreateActionRow> {
+fn get_edit_modal(review_id: &str) -> CreateModal {
+    CreateModal::new(format!("edit_{}", review_id), "Edit Review").components(vec![
+        CreateActionRow::InputText(
+            CreateInputText::new(InputTextStyle::Short, "Author", "author_field").value("<title>"),
+        ),
+        CreateActionRow::InputText(
+            CreateInputText::new(InputTextStyle::Paragraph, "Description", "desc_field")
+                .value("<description>"),
+        ),
+    ])
+}
+
+fn get_action_row(approved: Option<bool>, review_id: &str) -> Vec<CreateActionRow> {
     let mut buttons: Vec<CreateButton> = vec![];
 
     let mut approve_btn = CreateButton::new("<invalid>")
@@ -268,8 +293,7 @@ fn get_action_row(
             } else {
                 approve_btn = approve_btn
                     .label("Approve")
-                    .custom_id(format!("_____approve_{}", review_id))
-                    .disabled(true);
+                    .custom_id(format!("approve_{}", review_id));
             }
         }
     }
@@ -288,8 +312,7 @@ fn get_action_row(
             if approved {
                 reject_btn = reject_btn
                     .label("Reject")
-                    .custom_id(format!("_____reject_{}", review_id))
-                    .disabled(true);
+                    .custom_id(format!("reject_{}", review_id));
             } else {
                 reject_btn = reject_btn
                     .label("Rejected")
@@ -302,24 +325,17 @@ fn get_action_row(
     let mut rotation_btns = vec![
         CreateButton::new(format!("rotate_{}_270", review_id))
             .emoji(ReactionType::Unicode("↪".to_string()))
-            .label(" ")
             .style(ButtonStyle::Secondary),
         CreateButton::new(format!("rotate_{}_180", review_id))
             .emoji(ReactionType::Unicode("↕".to_string()))
-            .label(" ")
             .style(ButtonStyle::Secondary),
         CreateButton::new(format!("rotate_{}_90", review_id))
             .emoji(ReactionType::Unicode("↩".to_string()))
-            .label(" ")
             .style(ButtonStyle::Secondary),
     ];
 
     buttons.push(approve_btn);
-
-    if has_image {
-        buttons.append(&mut rotation_btns);
-    }
-
+    buttons.append(&mut rotation_btns);
     buttons.push(reject_btn);
 
     vec![CreateActionRow::Buttons(buttons)]
@@ -374,11 +390,9 @@ impl Bot {
                 ));
             }
 
-            let msg = CreateMessage::new().embed(embed).components(get_action_row(
-                None,
-                !review.images.is_empty(),
-                &review.id.to_string(),
-            ));
+            let msg = CreateMessage::new()
+                .embed(embed)
+                .components(get_action_row(None, &review.id.to_string()));
 
             comms.send_message(http.clone(), msg).await?;
         }
