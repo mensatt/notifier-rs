@@ -133,6 +133,7 @@ impl EventHandler for Handler {
                         let msg_edit = EditMessage::new().components(get_action_row(
                             state,
                             review_id,
+                            cmp.message.embeds.first().unwrap().image.is_some(),
                             cmp.user.name.as_str(),
                         ));
 
@@ -165,6 +166,7 @@ impl EventHandler for Handler {
                         let msg_edit = EditMessage::new().components(get_action_row(
                             ReviewMessageState::Delete,
                             review_id,
+                            cmp.message.embeds.first().unwrap().image.is_some(),
                             cmp.user.name.as_str(),
                         ));
 
@@ -341,7 +343,12 @@ fn get_edit_modal(review_id: &str) -> CreateModal {
     ])
 }
 
-fn get_action_row(state: ReviewMessageState, review_id: &str, who: &str) -> Vec<CreateActionRow> {
+fn get_action_row(
+    state: ReviewMessageState,
+    review_id: &str,
+    has_image: bool,
+    who: &str,
+) -> Vec<CreateActionRow> {
     let mut buttons: Vec<CreateButton> = vec![];
 
     let mut approve_btn = CreateButton::new(format!("approve_{}", review_id))
@@ -360,6 +367,7 @@ fn get_action_row(state: ReviewMessageState, review_id: &str, who: &str) -> Vec<
             approve_btn = approve_btn
                 .label(format!("Approved by {}", who))
                 .disabled(true);
+            reject_btn = reject_btn.label("Unapprove");
         }
         ReviewMessageState::Unapprove => {
             reject_btn = reject_btn.label(format!("Reject (unapproved by {})", who))
@@ -396,7 +404,9 @@ fn get_action_row(state: ReviewMessageState, review_id: &str, who: &str) -> Vec<
     ];
 
     buttons.push(approve_btn);
-    buttons.append(&mut rotation_btns);
+    if has_image {
+        buttons.append(&mut rotation_btns);
+    }
     buttons.push(reject_btn);
 
     vec![CreateActionRow::Buttons(buttons)]
@@ -454,6 +464,7 @@ impl Bot {
             let msg = CreateMessage::new().embed(embed).components(get_action_row(
                 ReviewMessageState::New,
                 &review.id.to_string(),
+                !review.images.is_empty(),
                 "invalid", // TODO: Make Option<>
             ));
 
