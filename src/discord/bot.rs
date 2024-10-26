@@ -31,6 +31,7 @@ impl TypeMapKey for Settings {
     type Value = Arc<Settings>;
 }
 
+#[derive(Eq, PartialEq)]
 enum ReviewMessageState {
     New,
     Approve,
@@ -129,8 +130,11 @@ impl EventHandler for Handler {
                             };
                         }
 
-                        let msg_edit =
-                            EditMessage::new().components(get_action_row(state, review_id));
+                        let msg_edit = EditMessage::new().components(get_action_row(
+                            state,
+                            review_id,
+                            cmp.user.name.as_str(),
+                        ));
 
                         match cmp.message.edit(ctx.http.clone(), msg_edit).await {
                             Ok(_) => {}
@@ -158,8 +162,11 @@ impl EventHandler for Handler {
                             };
                         }
 
-                        let msg_edit = EditMessage::new()
-                            .components(get_action_row(ReviewMessageState::Delete, review_id));
+                        let msg_edit = EditMessage::new().components(get_action_row(
+                            ReviewMessageState::Delete,
+                            review_id,
+                            cmp.user.name.as_str(),
+                        ));
 
                         match cmp.message.edit(ctx.http.clone(), msg_edit).await {
                             Ok(_) => {}
@@ -334,7 +341,7 @@ fn get_edit_modal(review_id: &str) -> CreateModal {
     ])
 }
 
-fn get_action_row(state: ReviewMessageState, review_id: &str) -> Vec<CreateActionRow> {
+fn get_action_row(state: ReviewMessageState, review_id: &str, who: &str) -> Vec<CreateActionRow> {
     let mut buttons: Vec<CreateButton> = vec![];
 
     let mut approve_btn = CreateButton::new(format!("approve_{}", review_id))
@@ -348,18 +355,23 @@ fn get_action_row(state: ReviewMessageState, review_id: &str) -> Vec<CreateActio
         .style(ButtonStyle::Danger);
 
     match state {
-        ReviewMessageState::New | ReviewMessageState::Unapprove => {}
+        ReviewMessageState::New => {}
         ReviewMessageState::Approve => {
-            approve_btn = approve_btn.label("Approved").disabled(true);
+            approve_btn = approve_btn
+                .label(format!("Approved by {}", who))
+                .disabled(true);
+        }
+        ReviewMessageState::Unapprove => {
+            reject_btn = reject_btn.label(format!("Reject (unapproved by {})", who))
         }
         ReviewMessageState::Reject => {
             reject_btn = reject_btn
-                .label("Delete")
+                .label(format!("Delete (rejected by {})", who))
                 .custom_id(format!("delete_{}", review_id));
         }
         ReviewMessageState::Delete => {
             reject_btn = reject_btn
-                .label("Deleted")
+                .label(format!("Deleted by {}", who))
                 .disabled(true)
                 .custom_id(format!("_____reject_deleted_{}", review_id));
             approve_btn = approve_btn
@@ -371,13 +383,16 @@ fn get_action_row(state: ReviewMessageState, review_id: &str) -> Vec<CreateActio
     let mut rotation_btns = vec![
         CreateButton::new(format!("rotate_{}_270", review_id))
             .emoji(ReactionType::Unicode("↪".to_string()))
-            .style(ButtonStyle::Secondary),
+            .style(ButtonStyle::Secondary)
+            .disabled(state == ReviewMessageState::Delete),
         CreateButton::new(format!("rotate_{}_180", review_id))
             .emoji(ReactionType::Unicode("↕".to_string()))
-            .style(ButtonStyle::Secondary),
+            .style(ButtonStyle::Secondary)
+            .disabled(state == ReviewMessageState::Delete),
         CreateButton::new(format!("rotate_{}_90", review_id))
             .emoji(ReactionType::Unicode("↩".to_string()))
-            .style(ButtonStyle::Secondary),
+            .style(ButtonStyle::Secondary)
+            .disabled(state == ReviewMessageState::Delete),
     ];
 
     buttons.push(approve_btn);
@@ -439,6 +454,7 @@ impl Bot {
             let msg = CreateMessage::new().embed(embed).components(get_action_row(
                 ReviewMessageState::New,
                 &review.id.to_string(),
+                "invalid", // TODO: Make Option<>
             ));
 
             comms.send_message(http.clone(), msg).await?;
