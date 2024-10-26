@@ -30,3 +30,15 @@ pub struct LoginMutation {
     #[arguments(input: { email: $email, password: $password })]
     pub login_user: String,
 }
+
+#[derive(cynic::QueryVariables, Debug)]
+pub struct DeleteReviewMutationVariables {
+    pub id: Uuid,
+}
+
+#[derive(cynic::QueryFragment, Debug)]
+#[cynic(graphql_type = "Mutation", variables = "DeleteReviewMutationVariables")]
+pub struct DeleteReviewMutation {
+    #[arguments(input: { id: $id })]
+    pub delete_review: Review,
+}

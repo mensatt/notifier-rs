@@ -5,7 +5,7 @@ use crate::image::ImageClient;
 use crate::settings::Settings;
 use log::{debug, info, warn};
 use serenity::all::{
-    ButtonStyle, Colour, Context, CreateButton, CreateEmbed, CreateEmbedAuthor,
+    ActionRowComponent, ButtonStyle, Colour, Context, CreateButton, CreateEmbed, CreateEmbedAuthor,
     CreateInteractionResponse, CreateInteractionResponseFollowup, CreateMessage, CreateModal,
     EditMessage, EventHandler, GatewayIntents, Http, InputTextStyle, Interaction, ReactionType,
     Ready, Timestamp,
@@ -29,6 +29,14 @@ impl TypeMapKey for ImageClient {
 
 impl TypeMapKey for Settings {
     type Value = Arc<Settings>;
+}
+
+enum ReviewMessageState {
+    New,
+    Approve,
+    Unapprove,
+    Reject,
+    Delete,
 }
 
 #[async_trait]
@@ -72,7 +80,33 @@ impl EventHandler for Handler {
 
                 match split[0] {
                     "approve" | "reject" => {
-                        let approve = split[0] == "approve";
+                        let state = if split[0] == "approve" {
+                            ReviewMessageState::Approve
+                        } else {
+                            // Hack:If the first button (e.g. the approve button) was disabled,
+                            // then the review was approved and we want the typical reject button
+                            // back.
+                            // Unwraps should be safe, as the number of components is constant,
+                            // same as the first() calls. Note that this may break if the
+                            // button layout changes.
+                            let was_approved = cmp
+                                .message
+                                .components
+                                .first()
+                                .unwrap()
+                                .components
+                                .first()
+                                .unwrap();
+                            if let ActionRowComponent::Button(button) = was_approved {
+                                if button.disabled {
+                                    ReviewMessageState::Unapprove
+                                } else {
+                                    ReviewMessageState::Reject
+                                }
+                            } else {
+                                ReviewMessageState::Reject
+                            }
+                        };
 
                         // Scope to minimize the time the lock is held
                         // (It shouldn't be an issue anyway, as it is only read, but better safe than sorry)
@@ -83,7 +117,7 @@ impl EventHandler for Handler {
                                 .expect("Could not retrieve MensattGqlClient from global context");
 
                             match gql_client
-                                .update_review(Uuid(review_id.to_string()), approve)
+                                .update_review(Uuid(review_id.to_string()), split[0] == "approve")
                                 .await
                             {
                                 Ok(_) => {}
@@ -96,7 +130,36 @@ impl EventHandler for Handler {
                         }
 
                         let msg_edit =
-                            EditMessage::new().components(get_action_row(Some(approve), review_id));
+                            EditMessage::new().components(get_action_row(state, review_id));
+
+                        match cmp.message.edit(ctx.http.clone(), msg_edit).await {
+                            Ok(_) => {}
+                            Err(e) => {
+                                warn!("Failed to edit message: {}", e);
+                                warn!("Message: {:#?}", cmp.message);
+                                return;
+                            }
+                        };
+                    }
+                    "delete" => {
+                        {
+                            let gql_client = ctx.data.read().await;
+                            let gql_client = gql_client
+                                .get::<MensattGqlClient>()
+                                .expect("Could not retrieve MensattGqlClient from global context");
+
+                            match gql_client.delete_review(Uuid(review_id.to_string())).await {
+                                Ok(_) => {}
+                                Err(err) => {
+                                    warn!("Failed to delete review: {}", err);
+                                    warn!("Original message: {:#?}", cmp.message);
+                                    return;
+                                }
+                            };
+                        }
+
+                        let msg_edit = EditMessage::new()
+                            .components(get_action_row(ReviewMessageState::Delete, review_id));
 
                         match cmp.message.edit(ctx.http.clone(), msg_edit).await {
                             Ok(_) => {}
@@ -271,54 +334,37 @@ fn get_edit_modal(review_id: &str) -> CreateModal {
     ])
 }
 
-fn get_action_row(approved: Option<bool>, review_id: &str) -> Vec<CreateActionRow> {
+fn get_action_row(state: ReviewMessageState, review_id: &str) -> Vec<CreateActionRow> {
     let mut buttons: Vec<CreateButton> = vec![];
 
-    let mut approve_btn = CreateButton::new("<invalid>")
+    let mut approve_btn = CreateButton::new(format!("approve_{}", review_id))
+        .label("Approve")
         .emoji(ReactionType::Unicode("✅".to_string()))
         .style(ButtonStyle::Success);
 
-    match approved {
-        None => {
-            approve_btn = approve_btn
-                .label("Approve")
-                .custom_id(format!("approve_{}", review_id));
-        }
-        Some(approved) => {
-            if approved {
-                approve_btn = approve_btn
-                    .label("Approved")
-                    .custom_id(format!("_____approve_{}", review_id))
-                    .disabled(true);
-            } else {
-                approve_btn = approve_btn
-                    .label("Approve")
-                    .custom_id(format!("approve_{}", review_id));
-            }
-        }
-    }
-
-    let mut reject_btn = CreateButton::new("<invalid>")
+    let mut reject_btn = CreateButton::new(format!("reject_{}", review_id))
+        .label("Reject")
         .emoji(ReactionType::Unicode("🗑".to_string()))
         .style(ButtonStyle::Danger);
 
-    match approved {
-        None => {
-            reject_btn = reject_btn
-                .label("Reject")
-                .custom_id(format!("reject_{}", review_id));
+    match state {
+        ReviewMessageState::New | ReviewMessageState::Unapprove => {}
+        ReviewMessageState::Approve => {
+            approve_btn = approve_btn.label("Approved").disabled(true);
         }
-        Some(approved) => {
-            if approved {
-                reject_btn = reject_btn
-                    .label("Reject")
-                    .custom_id(format!("reject_{}", review_id));
-            } else {
-                reject_btn = reject_btn
-                    .label("Rejected")
-                    .custom_id(format!("_____reject_{}", review_id))
-                    .disabled(true);
-            }
+        ReviewMessageState::Reject => {
+            reject_btn = reject_btn
+                .label("Delete")
+                .custom_id(format!("delete_{}", review_id));
+        }
+        ReviewMessageState::Delete => {
+            reject_btn = reject_btn
+                .label("Deleted")
+                .disabled(true)
+                .custom_id(format!("_____reject_deleted_{}", review_id));
+            approve_btn = approve_btn
+                .disabled(true)
+                .custom_id(format!("_____approve_deleted_{}", review_id));
         }
     }
 
@@ -390,9 +436,10 @@ impl Bot {
                 ));
             }
 
-            let msg = CreateMessage::new()
-                .embed(embed)
-                .components(get_action_row(None, &review.id.to_string()));
+            let msg = CreateMessage::new().embed(embed).components(get_action_row(
+                ReviewMessageState::New,
+                &review.id.to_string(),
+            ));
 
             comms.send_message(http.clone(), msg).await?;
         }

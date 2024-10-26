@@ -1,5 +1,6 @@
 use crate::gql::mutations::{
-    LoginMutation, LoginMutationVariables, UpdateReviewMutation, UpdateReviewMutationVariables,
+    DeleteReviewMutation, DeleteReviewMutationVariables, LoginMutation, LoginMutationVariables,
+    UpdateReviewMutation, UpdateReviewMutationVariables,
 };
 use crate::gql::Uuid;
 use crate::settings::Settings;
@@ -83,6 +84,34 @@ impl MensattGqlClient {
             info!(
                 "Successfully updated review with id {}",
                 data.update_review.id
+            );
+        }
+
+        Ok(())
+    }
+
+    pub async fn delete_review(&self, id: Uuid) -> anyhow::Result<()> {
+        let delete_mutation = DeleteReviewMutation::build(DeleteReviewMutationVariables { id });
+
+        let response = self
+            .http_client
+            .post(self.settings.graphql.https_url.as_str())
+            .run_graphql(delete_mutation)
+            .await?;
+
+        debug!("Delete review response: {:#?}", response);
+
+        if response.errors.is_some() {
+            return Err(anyhow::anyhow!(
+                "Delete review failed: {:#?}",
+                response.errors
+            ));
+        }
+
+        if let Some(data) = response.data {
+            info!(
+                "Successfully deleted review with id {}",
+                data.delete_review.id
             );
         }
 
