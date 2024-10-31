@@ -18,7 +18,20 @@ impl ReviewListener {
         Self { settings, tx }
     }
 
-    pub async fn listen(&self) -> anyhow::Result<()> {
+    pub async fn continuous_listen(&self) -> ! {
+        loop {
+            match self.listen().await {
+                Ok(_) => {}
+                Err(err) => {
+                    error!("Error while listening for review creation: {}", err);
+                    warn!("Trying again in 60 seconds");
+                    tokio::time::sleep(Duration::from_secs(60)).await;
+                }
+            }
+        }
+    }
+
+    async fn listen(&self) -> anyhow::Result<()> {
         let mut req = self.settings.graphql.ws_url.clone().into_client_request()?;
         req.headers_mut().insert(
             "Sec-WebSocket-Protocol",
@@ -42,7 +55,6 @@ impl ReviewListener {
 
         info!("Successfully subscribed to review creation");
 
-        info!("Entering subscription loop?");
         while let Some(msg) = subscription.next().await {
             match msg {
                 Ok(msg) => {

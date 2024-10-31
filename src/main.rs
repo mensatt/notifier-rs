@@ -50,28 +50,9 @@ async fn main() -> anyhow::Result<()> {
     // Create GQL listener
     let gql_task = tokio::spawn(async move {
         let listener = gql::listener::ReviewListener::new(settings_dup, tx);
-
-        let mut tries: u32 = 0;
-
         loop {
-            let res = listener.listen().await;
-            match res {
-                Ok(_) => {
-                    error!("Listener returned?");
-                    panic!();
-                }
-                Err(err) => {
-                    error!("Listener error: {}", err);
-                    error!("Retrying in 60 seconds...");
-                }
-            }
-
-            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-            tries += 1;
-
-            if tries > 10 {
-                panic!("Too many tries, exiting...");
-            }
+            listener.continuous_listen().await;
+            unreachable!("GQL continuous listener returned");
         }
     });
 
