@@ -1,14 +1,13 @@
 use crate::gql::client::MensattGqlClient;
-use crate::gql::subscriptions::Review;
-use crate::gql::Uuid;
+use crate::gql::{Review, Uuid};
 use crate::image::ImageClient;
 use crate::settings::Settings;
 use log::{debug, info, warn};
 use serenity::all::{
-    ActionRowComponent, ButtonStyle, Colour, Context, CreateButton, CreateEmbed, CreateEmbedAuthor,
-    CreateInteractionResponse, CreateInteractionResponseFollowup, CreateMessage, CreateModal,
-    EditMessage, EventHandler, GatewayIntents, Http, InputTextStyle, Interaction, ReactionType,
-    Ready, Timestamp,
+    ActionRowComponent, ButtonStyle, Colour, Context, CreateButton, CreateCommand, CreateEmbed,
+    CreateEmbedAuthor, CreateInteractionResponse, CreateInteractionResponseFollowup,
+    CreateInteractionResponseMessage, CreateMessage, CreateModal, EditMessage, EventHandler,
+    GatewayIntents, GuildId, Http, InputTextStyle, Interaction, ReactionType, Ready, Timestamp,
 };
 use serenity::builder::{CreateActionRow, CreateInputText};
 use serenity::model::id::ChannelId;
@@ -42,18 +41,102 @@ enum ReviewMessageState {
 
 #[async_trait]
 impl EventHandler for Handler {
-    async fn ready(&self, _ctx: Context, data_about_bot: Ready) {
+    async fn ready(&self, ctx: Context, data_about_bot: Ready) {
         info!(
             "Received discord bot ready event, we are: {}",
             data_about_bot.user.name
         );
         debug!("{:#?}", data_about_bot);
+
+        info!("Registering slash commands");
+        let recover =
+            CreateCommand::new("recover").description("Sends messages for all unapproved reviews");
+
+        {
+            let guard = ctx.data.read().await;
+            let settings = guard
+                .get::<Settings>()
+                .expect("Could not retrieve settings from global context");
+            for gid in &settings.discord.guilds {
+                let guild = GuildId::new(*gid);
+                info!("Registering commands for {}", gid);
+
+                match guild.create_command(&ctx.http, recover.clone()).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        warn!("Error registering slash command: {:?}", e);
+                    }
+                };
+            }
+        }
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         match interaction {
             Interaction::Command(cmd) => {
                 info!("Received command interaction: {:#?}", cmd);
+                match cmd.data.name.as_str() {
+                    "recover" => {
+                        let (reviews, settings) = {
+                            let guard = ctx.data.read().await;
+                            let gql_client = guard
+                                .get::<MensattGqlClient>()
+                                .expect("Could not retrieve MensattGqlClient from global context");
+                            let settings = guard
+                                .get::<Settings>()
+                                .expect("Could not retrieve settings from global context");
+                            (gql_client.get_unapproved_reviews().await, settings.clone())
+                        };
+                        match reviews {
+                            Ok(reviews) => {
+                                let comms = ChannelId::new(settings.discord.comm_channel);
+                                let nr = reviews.len();
+                                match cmd
+                                    .create_response(
+                                        ctx.http.clone(),
+                                        CreateInteractionResponse::Message(
+                                            CreateInteractionResponseMessage::new().content(
+                                                format!("Recovering {} reviews for you ^-^", nr),
+                                            ),
+                                        ),
+                                    )
+                                    .await
+                                {
+                                    Ok(_) => {}
+                                    Err(err) => {
+                                        warn!(
+                                            "Could not reply to slash command interaction: {:#?}",
+                                            err
+                                        );
+                                    }
+                                }
+                                for r in reviews {
+                                    match comms
+                                        .send_message(
+                                            ctx.http.clone(),
+                                            create_review_embed(&settings, r),
+                                        )
+                                        .await
+                                    {
+                                        Ok(_) => {}
+                                        Err(err) => {
+                                            warn!(
+                                                "Could not send recovered review message: {:#?}",
+                                                err
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            Err(err) => {
+                                warn!("Error getting unapproved reviews: {:?}", err);
+                            }
+                        }
+                    }
+                    _ => {
+                        warn!("Received unknown slash command interaction: {:#?}", cmd)
+                    }
+                }
             }
             Interaction::Component(mut cmp) => {
                 info!("Received component interaction: {:#?}", cmp);
@@ -70,6 +153,7 @@ impl EventHandler for Handler {
                 let review_id = split[1];
 
                 // We are gonna take a while, let's tell discord to calm down a bit
+                // TODO: Don't think this is necessary, as we take less than 5s?
                 match cmp.defer(ctx.http.clone()).await {
                     Ok(_) => {}
                     Err(e) => {
@@ -412,6 +496,48 @@ fn get_action_row(
     vec![CreateActionRow::Buttons(buttons)]
 }
 
+fn create_review_embed(settings: &Settings, review: Review) -> CreateMessage {
+    let mut embed = CreateEmbed::new()
+        .author(CreateEmbedAuthor::new(
+            review.display_name.unwrap_or("Anonymous".to_string()),
+        ))
+        .colour(Colour::from_rgb(255, 107, 38))
+        .timestamp(
+            Timestamp::from_str(review.created_at.0.as_str()).unwrap_or_else(|_| {
+                panic!("Could not parse review time stamp: {:?}", review.created_at)
+            }),
+        )
+        .title(format!(
+            "{} | {}",
+            review.occurrence.dish.name_de,
+            (0..review.stars).map(|_| '★').collect::<String>()
+        ))
+        .url(format!(
+            "{}{}",
+            settings.mensatt.occurrence_url, review.occurrence.id.0
+        ));
+
+    if let Some(text) = review.text {
+        embed = embed.description(text);
+    }
+
+    if !review.images.is_empty() {
+        embed = embed.image(format!(
+            "{}{}?auth={}",
+            settings.image.image_url,
+            review.images.first().unwrap().id.0,
+            settings.image.key
+        ));
+    }
+
+    CreateMessage::new().embed(embed).components(get_action_row(
+        ReviewMessageState::New,
+        &review.id.to_string(),
+        !review.images.is_empty(),
+        "invalid", // TODO: Make Option<>
+    ))
+}
+
 pub struct Bot {
     rx: tokio::sync::mpsc::Receiver<Review>,
     settings: Settings,
@@ -428,45 +554,7 @@ impl Bot {
         while let Some(review) = self.rx.recv().await {
             info!("Received review through channel: {:#?}", review);
 
-            let mut embed = CreateEmbed::new()
-                .author(CreateEmbedAuthor::new(
-                    review.display_name.unwrap_or("Anonymous".to_string()),
-                ))
-                .colour(Colour::from_rgb(255, 107, 38))
-                .timestamp(
-                    Timestamp::from_str(review.created_at.0.as_str()).unwrap_or_else(|_| {
-                        panic!("Could not parse review time stamp: {:?}", review.created_at)
-                    }),
-                )
-                .title(format!(
-                    "{} | {}",
-                    review.occurrence.dish.name_de,
-                    (0..review.stars).map(|_| '★').collect::<String>()
-                ))
-                .url(format!(
-                    "{}{}",
-                    self.settings.mensatt.occurrence_url, review.occurrence.id.0
-                ));
-
-            if let Some(text) = review.text {
-                embed = embed.description(text);
-            }
-
-            if !review.images.is_empty() {
-                embed = embed.image(format!(
-                    "{}{}?auth={}",
-                    self.settings.image.image_url,
-                    review.images.first().unwrap().id.0,
-                    self.settings.image.key
-                ));
-            }
-
-            let msg = CreateMessage::new().embed(embed).components(get_action_row(
-                ReviewMessageState::New,
-                &review.id.to_string(),
-                !review.images.is_empty(),
-                "invalid", // TODO: Make Option<>
-            ));
+            let msg = create_review_embed(&self.settings, review);
 
             comms.send_message(http.clone(), msg).await?;
         }

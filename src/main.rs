@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
-use crate::gql::subscriptions::Review;
+use crate::gql::Review;
 use crate::settings::Settings;
 use config::Config;
-use log::{debug, error, info};
+use log::{debug, info};
 use rustls::crypto::CryptoProvider;
 
 mod discord;
@@ -50,10 +50,7 @@ async fn main() -> anyhow::Result<()> {
     // Create GQL listener
     let gql_task = tokio::spawn(async move {
         let listener = gql::listener::ReviewListener::new(settings_dup, tx);
-        loop {
-            listener.continuous_listen().await;
-            unreachable!("GQL continuous listener returned");
-        }
+        listener.continuous_listen().await;
     });
 
     // Create discord bot

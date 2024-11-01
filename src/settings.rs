@@ -12,6 +12,7 @@ pub struct Settings {
 pub struct Discord {
     pub token: String,
     pub comm_channel: u64,
+    pub guilds: Vec<u64>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

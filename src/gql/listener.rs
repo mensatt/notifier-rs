@@ -1,4 +1,5 @@
-use crate::gql::subscriptions::{CreateReviewSubscription, Review};
+use crate::gql::subscriptions::CreateReviewSubscription;
+use crate::gql::Review;
 use crate::settings::Settings;
 use cynic::{GraphQlResponse, SubscriptionBuilder};
 use futures::StreamExt;

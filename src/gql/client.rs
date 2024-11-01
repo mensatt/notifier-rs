@@ -2,10 +2,12 @@ use crate::gql::mutations::{
     DeleteReviewMutation, DeleteReviewMutationVariables, LoginMutation, LoginMutationVariables,
     UpdateReviewMutation, UpdateReviewMutationVariables,
 };
-use crate::gql::Uuid;
+use crate::gql::queries::{RetrieveReviewsQuery, RetrieveReviewsQueryVariables};
+use crate::gql::{Review, Uuid};
 use crate::settings::Settings;
 use cynic::http::ReqwestExt;
 use cynic::MutationBuilder;
+use cynic::QueryBuilder;
 use log::{debug, info};
 use reqwest::header::HeaderMap;
 
@@ -59,6 +61,32 @@ impl MensattGqlClient {
         }
 
         Ok(())
+    }
+
+    pub async fn get_unapproved_reviews(&self) -> anyhow::Result<Vec<Review>> {
+        let get_query =
+            RetrieveReviewsQuery::build(RetrieveReviewsQueryVariables { approved: false });
+
+        let response = self
+            .http_client
+            .post(self.settings.graphql.https_url.as_str())
+            .run_graphql(get_query)
+            .await?;
+
+        debug!("Retrieve reviews response: {:#?}", response);
+
+        if response.errors.is_some() {
+            return Err(anyhow::anyhow!(
+                "Retrieve reviews failed: {:#?}",
+                response.errors
+            ));
+        }
+
+        if let Some(data) = response.data {
+            return Ok(data.reviews);
+        }
+
+        Err(anyhow::anyhow!("Got no data when retrieving reviews"))
     }
 
     pub async fn update_review(&self, id: Uuid, approved: bool) -> anyhow::Result<()> {

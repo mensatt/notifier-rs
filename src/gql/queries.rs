@@ -1,38 +1,12 @@
-use crate::gql::{schema, Uuid};
+use crate::gql::{schema, Review};
+#[derive(cynic::QueryVariables, Debug)]
+pub struct RetrieveReviewsQueryVariables {
+    pub approved: bool,
+}
 
 #[derive(cynic::QueryFragment, Debug)]
-#[cynic(graphql_type = "Query")]
+#[cynic(graphql_type = "Query", variables = "RetrieveReviewsQueryVariables")]
 pub struct RetrieveReviewsQuery {
-    #[arguments(filter: { approved: false })]
+    #[arguments(filter: { approved: $approved })]
     pub reviews: Vec<Review>,
 }
-
-#[derive(cynic::QueryFragment, Debug)]
-pub struct Review {
-    pub id: Uuid,
-    pub occurrence: Occurrence,
-    pub display_name: Option<String>,
-    pub stars: i32,
-    pub text: Option<String>,
-    pub updated_at: Timestamp,
-    pub images: Vec<Image>,
-}
-
-#[derive(cynic::QueryFragment, Debug)]
-pub struct Occurrence {
-    pub dish: Dish,
-    pub id: Uuid,
-}
-
-#[derive(cynic::QueryFragment, Debug)]
-pub struct Image {
-    pub id: Uuid,
-}
-
-#[derive(cynic::QueryFragment, Debug)]
-pub struct Dish {
-    pub name_de: String,
-}
-
-#[derive(cynic::Scalar, Debug, Clone)]
-pub struct Timestamp(pub String);
