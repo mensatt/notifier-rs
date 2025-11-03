@@ -51,10 +51,9 @@ async fn main() -> anyhow::Result<()> {
     // Create discord bot
     let discord_handle = tokio::spawn(async move {
         discord::bot::Bot::new(rx, settings.clone())
-            .await
             .start()
             .await
-            .unwrap();
+            .expect("Failed to start bot");
     });
 
     info!("Notifier service started!");
