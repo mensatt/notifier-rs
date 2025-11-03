@@ -1,3 +1,6 @@
+use std::sync::{Arc, RwLock};
+use std::time::Instant;
+
 use crate::gql::mutations::{
     DeleteReviewMutation, DeleteReviewMutationVariables, LoginMutation, LoginMutationVariables,
     UpdateReviewMutation, UpdateReviewMutationVariables,
@@ -9,11 +12,16 @@ use cynic::http::ReqwestExt;
 use cynic::MutationBuilder;
 use cynic::QueryBuilder;
 use log::{debug, info};
-use reqwest::header::HeaderMap;
+
+pub struct JwtState {
+    token: String,
+    expires_at: Instant,
+}
 
 pub struct MensattGqlClient {
     settings: Settings,
     http_client: reqwest::Client,
+    jwt: Arc<RwLock<JwtState>>,
 }
 
 impl MensattGqlClient {
@@ -21,10 +29,39 @@ impl MensattGqlClient {
         Self {
             settings,
             http_client: reqwest::Client::new(),
+            jwt: Arc::new(RwLock::new(JwtState {
+                token: String::new(),
+                expires_at: Instant::now(),
+            })),
         }
     }
 
-    pub async fn login(&mut self) -> anyhow::Result<()> {
+    pub async fn get_jwt(&self) -> anyhow::Result<String> {
+        let now = Instant::now();
+
+        // Check if current token is still valid, if so return
+        {
+            let jwt_state = self.jwt.read().unwrap();
+            if jwt_state.expires_at >= now {
+                return Ok(jwt_state.token.clone());
+            }
+        }
+
+        // If token has expired, refresh it
+        // NOTE: We fetch the new token before acquiring the lock to avoid holding the 
+        // lock unnecessarily long (e.g. during during the http call)
+        // Doing it this way might cause an error later if the lifetime of the JWT is so 
+        // short that it has expired until we read it - which is very unlikely.
+        let new_token = self.refresh_jwt().await?;
+        {
+            let mut jwt_state = self.jwt.write().unwrap();
+            jwt_state.token = new_token.clone();
+            // TODO: Update expiry timestamp
+        }
+        Ok(new_token)
+    }
+
+    pub async fn refresh_jwt(&self) -> anyhow::Result<String> {
         let login_mutation = LoginMutation::build(LoginMutationVariables {
             email: self.settings.mensatt.user.clone(),
             password: self.settings.mensatt.password.clone(),
@@ -42,25 +79,19 @@ impl MensattGqlClient {
             return Err(anyhow::anyhow!("Login failed: {:#?}", response.errors));
         }
 
-        if let Some(data) = response.data {
-            info!("Successfully logged in as {}", data.login_user);
+        let jwt = response
+            .data
+            .ok_or_else(|| anyhow::anyhow!("Login failed: No response"))?
+            .login_user;
 
-            let mut headers = HeaderMap::new();
-            headers.insert(
-                "Authorization",
-                format!("Bearer {}", data.login_user).parse()?,
-            );
+        info!("Successfully logged in as {}", jwt);
 
-            // I *really* do not like this, but it is not possible to insert default headers
-            // after the client has been created
-            self.http_client = reqwest::Client::builder()
-                .default_headers(headers)
-                .build()?;
-        } else {
-            return Err(anyhow::anyhow!("Login failed: No response"));
+        {
+            let mut jwt_state = self.jwt.write().unwrap();
+            jwt_state.token = jwt.clone();
         }
 
-        Ok(())
+        Ok(jwt)
     }
 
     pub async fn get_unapproved_reviews(&self) -> anyhow::Result<Vec<Review>> {
@@ -70,6 +101,7 @@ impl MensattGqlClient {
         let response = self
             .http_client
             .post(self.settings.graphql.https_url.as_str())
+            .bearer_auth(self.get_jwt().await?)
             .run_graphql(get_query)
             .await?;
 
@@ -96,6 +128,7 @@ impl MensattGqlClient {
         let response = self
             .http_client
             .post(self.settings.graphql.https_url.as_str())
+            .bearer_auth(self.get_jwt().await?)
             .run_graphql(update_mutation)
             .await?;
 
@@ -125,6 +158,7 @@ impl MensattGqlClient {
         let response = self
             .http_client
             .post(self.settings.graphql.https_url.as_str())
+            .bearer_auth(self.get_jwt().await?)
             .run_graphql(delete_mutation)
             .await?;
 

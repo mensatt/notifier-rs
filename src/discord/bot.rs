@@ -546,11 +546,9 @@ pub struct Bot {
 }
 
 impl Bot {
-    pub async fn new(rx: tokio::sync::mpsc::Receiver<Review>, settings: Settings) -> Self {
+    pub fn new(rx: tokio::sync::mpsc::Receiver<Review>, settings: Settings) -> Self {
         info!("Creating local graphql and image client");
-        let mut client = MensattGqlClient::new(settings.clone());
-        client.login().await.unwrap();
-        let gql_client = Arc::new(client);
+        let gql_client = Arc::new(MensattGqlClient::new(settings.clone()));
         let image_client = Arc::new(ImageClient::new(settings.clone()));
         Bot {
             rx,
