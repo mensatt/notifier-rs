@@ -34,11 +34,6 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Starting up notifier service...");
 
-    info!("Creating local graphql and image client");
-    let mut gql_client = gql::client::MensattGqlClient::new(settings.clone());
-    gql_client.login().await?;
-    let image_client = image::ImageClient::new(settings.clone());
-
     // Buffer size shouldn't really matter here, as I don't expect the receiver to take that long
     let (tx, rx) = tokio::sync::mpsc::channel::<Review>(8);
 
@@ -55,10 +50,11 @@ async fn main() -> anyhow::Result<()> {
 
     // Create discord bot
     let discord_handle = tokio::spawn(async move {
-        let mut bot = discord::bot::Bot::new(rx, settings.clone());
-        bot.start(settings.discord.token.as_str(), gql_client, image_client)
+        discord::bot::Bot::new(rx, settings.clone())
             .await
-            .expect("Failed to start bot");
+            .start()
+            .await
+            .unwrap();
     });
 
     info!("Notifier service started!");
