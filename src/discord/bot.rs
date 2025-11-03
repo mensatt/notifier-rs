@@ -541,11 +541,23 @@ fn create_review_embed(settings: &Settings, review: Review) -> CreateMessage {
 pub struct Bot {
     rx: tokio::sync::mpsc::Receiver<Review>,
     settings: Settings,
+    gql_client: Arc<MensattGqlClient>,
+    image_client: Arc<ImageClient>,
 }
 
 impl Bot {
-    pub fn new(rx: tokio::sync::mpsc::Receiver<Review>, settings: Settings) -> Self {
-        Bot { rx, settings }
+    pub async fn new(rx: tokio::sync::mpsc::Receiver<Review>, settings: Settings) -> Self {
+        info!("Creating local graphql and image client");
+        let mut client = MensattGqlClient::new(settings.clone());
+        client.login().await.unwrap();
+        let gql_client = Arc::new(client);
+        let image_client = Arc::new(ImageClient::new(settings.clone()));
+        Bot {
+            rx,
+            settings,
+            gql_client,
+            image_client,
+        }
     }
 
     pub async fn listen_for_gql_events(&mut self, http: Arc<Http>) -> anyhow::Result<()> {
@@ -562,27 +574,19 @@ impl Bot {
         Ok(())
     }
 
-    // Note: I would have liked to make the gql_client a member of the Bot struct, but this
-    // doesn't seem to work in combination with serenity-rs's implementation of bot global state.
-    // Moving it into the TypeMap would invalide the self.gql_client member and is not allowed.
-    pub async fn start(
-        &mut self,
-        token: &str,
-        mensatt_gql_client: MensattGqlClient,
-        image_client: ImageClient,
-    ) -> anyhow::Result<()> {
+    pub async fn start(&mut self) -> anyhow::Result<()> {
         let intents = GatewayIntents::empty();
 
         info!("Starting Discord bot...");
-        let mut client = Client::builder(token, intents)
+        let mut client = Client::builder(&self.settings.discord.token, intents)
             .event_handler(Handler)
             .await
             .expect("Failed to create client");
 
         {
             let mut data = client.data.write().await;
-            data.insert::<MensattGqlClient>(Arc::new(mensatt_gql_client));
-            data.insert::<ImageClient>(Arc::new(image_client));
+            data.insert::<MensattGqlClient>(self.gql_client.clone());
+            data.insert::<ImageClient>(self.image_client.clone());
             data.insert::<Settings>(Arc::new(self.settings.clone()));
         }
 
