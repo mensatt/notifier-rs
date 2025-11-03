@@ -1,3 +1,16 @@
+"""
+Indicates that an Input Object is a OneOf Input Object (and thus requires exactly one of its field be provided)
+"""
+directive @oneOf on INPUT_OBJECT
+
+"""
+Provides a scalar specification URL for specifying the behavior of custom scalar types.
+"""
+directive @specifiedBy(
+  """URL that specifies the behavior of this scalar."""
+  url: String!
+) on SCALAR
+
 input AddImagesToReviewInput {
   review: UUID!
   images: [ImageInput!]!
@@ -24,10 +37,13 @@ input CreateDishInput {
   nameEn: String
 }
 
+input CreateLocationInput {
+  externalId: Int!
+  name: String!
+  visible: Boolean
+}
+
 input CreateOccurrenceInput {
-  location: UUID!
-  dish: UUID!
-  sideDishes: [UUID!]
   date: Date
   kj: Int
   kcal: Int
@@ -41,15 +57,18 @@ input CreateOccurrenceInput {
   priceStudent: Int
   priceStaff: Int
   priceGuest: Int
+  dish: UUID!
+  location: UUID!
+  sideDishes: [UUID!]
   tags: [String!]
 }
 
 input CreateReviewInput {
   occurrence: UUID!
   displayName: String
-  images: [ImageInput!]
   stars: Int!
   text: String
+  images: [ImageInput!]
 }
 
 input CreateTagInput {
@@ -61,15 +80,15 @@ input CreateTagInput {
   isAllergy: Boolean
 }
 
+input CreateUserInput {
+  email: String!
+  password: String!
+}
+
 scalar Date
 
 input DeleteDishAliasInput {
   aliasName: String!
-}
-
-input DeleteImagesFromReviewInput {
-  review: UUID!
-  images: [UUID!]!
 }
 
 input DeleteOccurrenceInput {
@@ -84,14 +103,14 @@ type Dish {
   id: UUID!
   nameDe: String!
   nameEn: String
-  aliases: [DishAlias!]!
   reviewData(filter: ReviewFilter): ReviewDataDish!
+  aliases: [DishAlias!]!
 }
 
 type DishAlias {
-  dish: Dish!
   aliasName: String!
   normalizedAliasName: String!
+  dish: Dish!
 }
 
 input DishFilter {
@@ -130,31 +149,32 @@ input LoginUserInput {
 }
 
 type Mutation {
-  loginUser(input: LoginUserInput!): String!
-  createTag(input: CreateTagInput!): Tag!
   createDish(input: CreateDishInput!): Dish!
   updateDish(input: UpdateDishInput!): Dish!
   createDishAlias(input: CreateDishAliasInput!): DishAlias!
-  deleteDishAlias(input: DeleteDishAliasInput!): DishAlias!
+  deleteDishAlias(input: DeleteDishAliasInput!): Boolean!
+  createLocation(input: CreateLocationInput!): Location!
+  updateLocation(input: UpdateLocationInput!): Location!
   createOccurrence(input: CreateOccurrenceInput!): Occurrence!
   updateOccurrence(input: UpdateOccurrenceInput!): Occurrence!
-  deleteOccurrence(input: DeleteOccurrenceInput!): Occurrence!
-  addTagToOccurrence(input: AddTagToOccurrenceInput!): OccurrenceTag!
-  removeTagFromOccurrence(input: RemoveTagFromOccurrenceInput!): OccurrenceTag!
+  deleteOccurrence(input: DeleteOccurrenceInput!): Boolean!
   addSideDishToOccurrence(input: AddSideDishToOccurrenceInput!): OccurrenceSideDish!
   removeSideDishFromOccurrence(input: RemoveSideDishFromOccurrenceInput!): OccurrenceSideDish!
+  addTagToOccurrence(input: AddTagToOccurrenceInput!): OccurrenceTag!
+  removeTagFromOccurrence(input: RemoveTagFromOccurrenceInput!): OccurrenceTag!
   createReview(input: CreateReviewInput!): Review!
   updateReview(input: UpdateReviewInput!): Review!
-  deleteReview(input: DeleteReviewInput!): Review!
+  deleteReview(input: DeleteReviewInput!): Boolean!
   addImagesToReview(input: AddImagesToReviewInput!): Review!
-  deleteImagesFromReview(input: DeleteImagesFromReviewInput!): Review!
+  removeImagesFromReview(input: RemoveImagesFromReviewInput!): Review!
+  createTag(input: CreateTagInput!): Tag!
+  updateTag(input: UpdateTagInput!): Tag!
+  loginUser(input: LoginUserInput!): String!
+  createUser(input: CreateUserInput!): User!
 }
 
 type Occurrence {
   id: UUID!
-  location: Location!
-  dish: Dish!
-  sideDishes: [Dish!]!
   date: Date!
   kj: Int
   kcal: Int
@@ -168,9 +188,12 @@ type Occurrence {
   priceStudent: Int
   priceStaff: Int
   priceGuest: Int
-  tags: [Tag!]!
-  reviewData(filter: ReviewFilter): ReviewDataOccurrence!
   notAvailableAfter: Timestamp
+  location: Location!
+  dish: Dish!
+  tags: [Tag!]!
+  sideDishes: [Dish!]!
+  reviewData(filter: ReviewFilter): ReviewDataOccurrence!
 }
 
 input OccurrenceFilter {
@@ -192,13 +215,19 @@ type OccurrenceTag {
 }
 
 type Query {
-  currentUser: User
-  tags: [Tag!]!
   dishes(filter: DishFilter): [Dish!]!
+  images: [Image!]!
+  locations(filter: LocationFilter): [Location!]!
   occurrences(filter: OccurrenceFilter): [Occurrence!]!
   reviews(filter: ReviewFilter): [Review!]!
-  locations(filter: LocationFilter): [Location!]!
-  vcsBuildInfo: VcsBuildInfo
+  tags: [Tag!]!
+  currentUser: User
+  users: [User!]!
+}
+
+input RemoveImagesFromReviewInput {
+  review: UUID!
+  images: [UUID!]!
 }
 
 input RemoveSideDishFromOccurrenceInput {
@@ -213,26 +242,26 @@ input RemoveTagFromOccurrenceInput {
 
 type Review {
   id: UUID!
-  occurrence: Occurrence!
   displayName: String
-  images: [Image!]!
   stars: Int!
   text: String
   createdAt: Timestamp!
   updatedAt: Timestamp!
   acceptedAt: Timestamp
+  occurrence: Occurrence!
+  images: [Image!]!
 }
 
 type ReviewDataDish {
   reviews: [Review!]!
-  images: [Image!]!
   metadata: ReviewMetadataDish!
+  images: [Image!]!
 }
 
 type ReviewDataOccurrence {
   reviews: [Review!]!
-  images: [Image!]!
   metadata: ReviewMetadataOccurrence!
+  images: [Image!]!
 }
 
 input ReviewFilter {
@@ -250,8 +279,11 @@ type ReviewMetadataOccurrence {
 }
 
 type Subscription {
-  reviewCreated: Review
-  reviewAccepted: Review
+  """Subscribe to newly created reviews"""
+  reviewCreated: Review!
+
+  """Subscribe to accepted reviews"""
+  reviewAccepted: Review!
 }
 
 type Tag {
@@ -264,15 +296,13 @@ type Tag {
 }
 
 enum TagPriority {
-  HIDE
-  LOW
-  MEDIUM
   HIGH
+  MEDIUM
+  LOW
+  HIDE
 }
 
 scalar Timestamp
-
-scalar UUID
 
 input UpdateDishInput {
   id: UUID!
@@ -280,9 +310,15 @@ input UpdateDishInput {
   nameEn: String
 }
 
+input UpdateLocationInput {
+  id: UUID!
+  externalId: Int
+  name: String
+  visible: Boolean
+}
+
 input UpdateOccurrenceInput {
   id: UUID!
-  dish: UUID
   date: Date
   kj: Int
   kcal: Int
@@ -296,6 +332,7 @@ input UpdateOccurrenceInput {
   priceStudent: Int
   priceStaff: Int
   priceGuest: Int
+  dish: UUID
 }
 
 input UpdateReviewInput {
@@ -307,14 +344,29 @@ input UpdateReviewInput {
   approved: Boolean
 }
 
+input UpdateTagInput {
+  key: String!
+  name: String
+  description: String
+  shortName: String
+  priority: TagPriority
+  isAllergy: Boolean
+}
+
 type User {
   id: UUID!
   email: String!
 }
 
-type VcsBuildInfo {
-  commitTime: String!
-  commit: String!
-  modified: String!
-}
+"""
+A UUID is a unique 128-bit number, stored as 16 octets. UUIDs are parsed as
+Strings within GraphQL. UUIDs are used to assign unique identifiers to
+entities without requiring a central allocating authority.
+
+# References
+
+* [Wikipedia: Universally Unique Identifier](http://en.wikipedia.org/wiki/Universally_unique_identifier)
+* [RFC4122: A Universally Unique Identifier (UUID) URN Namespace](http://tools.ietf.org/html/rfc4122)
+"""
+scalar UUID
 
