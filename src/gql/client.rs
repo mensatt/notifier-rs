@@ -119,7 +119,8 @@ impl MensattGqlClient {
     }
 
     pub async fn delete_review(&self, id: Uuid) -> anyhow::Result<()> {
-        let delete_mutation = DeleteReviewMutation::build(DeleteReviewMutationVariables { id });
+        let delete_mutation =
+            DeleteReviewMutation::build(DeleteReviewMutationVariables { id: id.clone() });
 
         let response = self
             .http_client
@@ -136,13 +137,16 @@ impl MensattGqlClient {
             ));
         }
 
-        if let Some(data) = response.data {
-            info!(
-                "Successfully deleted review with id {}",
-                data.delete_review.id
-            );
+        let was_deleted = response
+            .data
+            .ok_or_else(|| anyhow::anyhow!("Deleting review '{}' failed: No Response Data", id))?
+            .delete_review;
+
+        if !was_deleted {
+            return Err(anyhow::anyhow!("Deleting review '{}' failed", id));
         }
 
+        info!("Successfully deleted review with id {}", id);
         Ok(())
     }
 }
