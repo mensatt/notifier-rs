@@ -1,4 +1,4 @@
-FROM rust:1.82.0-alpine3.20 AS builder
+FROM rust:1.90.0-alpine3.22 AS builder
 
 RUN apk upgrade --no-cache && apk add --no-cache musl-dev
 
@@ -12,7 +12,7 @@ COPY schemas ./schemas
 
 RUN RUSTFLAGS="-C target-feature=-crt-static" cargo install --target x86_64-unknown-linux-musl --path .
 
-FROM alpine:3.20
+FROM alpine:3.22
 
 # libgcc required as runtime library by Rust; I think because of unwinding?
 RUN apk upgrade --no-cache && apk --no-cache add libgcc
