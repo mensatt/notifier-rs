@@ -40,5 +40,5 @@ pub struct DeleteReviewMutationVariables {
 #[cynic(graphql_type = "Mutation", variables = "DeleteReviewMutationVariables")]
 pub struct DeleteReviewMutation {
     #[arguments(input: { id: $id })]
-    pub delete_review: Review,
+    pub delete_review: bool,
 }
