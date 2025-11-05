@@ -4,20 +4,22 @@ version = "0.3.0"
 edition = "2021"
 
 [dependencies]
-cynic = { version = "3.8.0", features = ["http-reqwest"] }
-graphql-ws-client = { version = "0.10.2", features = ["client-cynic", "tungstenite"] }
-reqwest = { version = "0.12.8", default-features = false, features = ["blocking", "http2", "rustls-tls", "rustls-tls-webpki-roots"] }
-tokio = { version = "1.40.0", features = ["rt-multi-thread"] }
-tokio-tungstenite = { version = "0.23.0", features = ["rustls", "tokio-rustls", "rustls-tls-webpki-roots"] }
+cynic = { version = "3.12.0", features = ["http-reqwest"] }
+graphql-ws-client = { version = "0.11.1", features = ["client-cynic", "tungstenite"] }
+reqwest = { version = "0.12.24", default-features = false, features = ["blocking", "http2", "rustls-tls"] }
+tokio = { version = "1.48.0", features = ["rt-multi-thread"] }
+# NOTE: As of writing this message, this can not be bumped >0.23 due to an
+# incompatibility with the version that is resolved for graphql-ws-client
+tokio-tungstenite = { version = "0.23.0", features = ["rustls-tls-webpki-roots"] }
 futures = "0.3.31"
-log = "0.4.22"
+log = "0.4.28"
 pretty_env_logger = "0.5.0"
-anyhow = "1.0.90"
-serenity = { version = "0.12.2", features = ["cache", "rustls_backend", "simd_json", "utils"] }
-config = { version = "0.14.0", features = ["toml"] }
-serde = { version = "1.0.210", features = ["derive"] }
-rand = "0.8.5"
-rustls = { version = "0.23.15", features = ["aws-lc-rs"] }
+anyhow = "1.0.100"
+serenity = { version = "0.12.4", features = ["rustls_backend", "simd_json"] }
+config = { version = "0.15.18", features = ["toml"] }
+serde = { version = "1.0.228", features = ["derive"] }
+rand = "0.9.2"
+rustls = { version = "0.23.35" }
 
 [build-dependencies]
 cynic-codegen = { version = "3" }
