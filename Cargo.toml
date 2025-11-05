@@ -20,6 +20,7 @@ config = { version = "0.15.18", features = ["toml"] }
 serde = { version = "1.0.228", features = ["derive"] }
 rand = "0.9.2"
 rustls = { version = "0.23.35" }
+jsonwebtoken = { version = "10.1.0", features = ["aws_lc_rs"] }
 
 [build-dependencies]
 cynic-codegen = { version = "3" }
