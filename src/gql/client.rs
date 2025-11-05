@@ -1,5 +1,5 @@
 use std::sync::{Arc, RwLock};
-use std::time::Instant;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::gql::mutations::{
     DeleteReviewMutation, DeleteReviewMutationVariables, LoginMutation, LoginMutationVariables,
@@ -12,10 +12,17 @@ use cynic::http::ReqwestExt;
 use cynic::MutationBuilder;
 use cynic::QueryBuilder;
 use log::{debug, info};
+use serde::Deserialize;
 
-pub struct JwtState {
+#[derive(Debug, Clone, Deserialize)]
+// NOTE: There are other fields as well, but we currently don't need them
+struct JwtClaims {
+    pub exp: u64, // Token expiration timestamp (in s since epoch)
+}
+
+struct JwtState {
     token: String,
-    expires_at: Instant,
+    expires_at: u64, // Token expiration timestamp (in s since UNIX epoch
 }
 
 pub struct MensattGqlClient {
@@ -31,32 +38,38 @@ impl MensattGqlClient {
             http_client: reqwest::Client::new(),
             jwt: Arc::new(RwLock::new(JwtState {
                 token: String::new(),
-                expires_at: Instant::now(),
+                expires_at: 0,
             })),
         }
     }
 
     pub async fn get_jwt(&self) -> anyhow::Result<String> {
-        let now = Instant::now();
+        // Get current UNIX timestamp (seconds since epoch in UTC)
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
         // Check if current token is still valid, if so return
         {
             let jwt_state = self.jwt.read().unwrap();
-            if jwt_state.expires_at >= now {
+            let remaining = jwt_state.expires_at.saturating_sub(now);
+            if remaining > self.settings.mensatt.jwt_threshold_secs {
                 return Ok(jwt_state.token.clone());
             }
         }
 
+        info!("JWT is close to expiry. Refreshing...");
+
         // If token has expired, refresh it
-        // NOTE: We fetch the new token before acquiring the lock to avoid holding the 
+        // NOTE: We fetch the new token before acquiring the lock to avoid holding the
         // lock unnecessarily long (e.g. during during the http call)
-        // Doing it this way might cause an error later if the lifetime of the JWT is so 
+        // Doing it this way might cause an error later if the lifetime of the JWT is so
         // short that it has expired until we read it - which is very unlikely.
         let new_token = self.refresh_jwt().await?;
+        // Not verifying signature is fine, since we only care about expiry timestamp
+        let decoded = jsonwebtoken::dangerous::insecure_decode::<JwtClaims>(&new_token)?;
         {
             let mut jwt_state = self.jwt.write().unwrap();
             jwt_state.token = new_token.clone();
-            // TODO: Update expiry timestamp
+            jwt_state.expires_at = decoded.claims.exp;
         }
         Ok(new_token)
     }

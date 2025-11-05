@@ -11,6 +11,7 @@ https_url = "https://dev-api.mensatt.de/data/graphql"
 occurrence_url = "https://mensatt.de/details/"
 user = "<username>"
 password = "<password>"
+jwt_threshold_secs = 120
 
 [image]
 image_url = "https://api.mensatt.de/content/image/"

@@ -26,6 +26,9 @@ pub struct Mensatt {
     pub occurrence_url: String,
     pub user: String,
     pub password: String,
+    // Threshold how far before actual expiration a token should be treated as expired
+    // This is used to avoid potential race conditions or slight clock desyncs
+    pub jwt_threshold_secs: u64,
 }
 
 #[derive(Debug, Deserialize, Clone)]
