@@ -13,6 +13,8 @@ mod settings;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // TODO: This (and the direct dependency on rustls) can be removed if/once
+    // all dependencies use aws-lc-rs
     CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider())
         .expect("Could not install default crypto provider");
 
