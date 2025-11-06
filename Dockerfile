@@ -4,19 +4,16 @@ RUN apk upgrade --no-cache && apk add --no-cache musl-dev
 
 WORKDIR /usr/src/notifier-rs
 
-COPY Cargo.lock Cargo.toml ./
-
-COPY src ./src
-COPY build.rs ./build.rs
 COPY schemas ./schemas
+COPY build.rs ./build.rs
+COPY Cargo.lock Cargo.toml ./
+COPY src ./src
 
-RUN RUSTFLAGS="-C target-feature=-crt-static" cargo install --target x86_64-unknown-linux-musl --path .
+RUN cargo build --locked --release && \
+    cp target/release/notifier-rs /usr/src/notifier-rs/notifier-rs  # Copy final binary to persistent path
 
 FROM alpine:3.22
 
-# libgcc required as runtime library by Rust; I think because of unwinding?
-RUN apk upgrade --no-cache && apk --no-cache add libgcc
-
-COPY --from=builder /usr/local/cargo/bin/notifier-rs /usr/local/bin/notifier-rs
+COPY --from=builder /usr/src/notifier-rs/notifier-rs /usr/local/bin/notifier-rs
 WORKDIR /
 CMD ["notifier-rs"]
